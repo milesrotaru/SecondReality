@@ -10,6 +10,7 @@ import panic from './panic.js';
 import mntscrl from './mntscrl.js';
 import lens from './lens.js';
 import plz from './plz.js';
+import minvball from './minvball.js';
 
 export const PARTS = [
   { music: [0, 0] },
@@ -26,4 +27,5 @@ export const PARTS = [
   mntscrl,
   lens,
   plz,
+  minvball,
 ];
