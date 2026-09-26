@@ -88,14 +88,26 @@ class App {
     }
     this.music.play(t0);
     this.running = true;
-    requestAnimationFrame(() => this.frame());
+    requestAnimationFrame((t) => this.frame(t));
   }
 
-  frame() {
+  // Video clock: advanced by exact vsync intervals (rAF timestamps) so motion
+  // is even at any refresh rate, and slewed gently toward the audio clock,
+  // whose timestamps arrive in audio-callback-sized steps. Seeks and pauses snap.
+  frame(ts) {
     if (!this.running) return;
-    const t = this.music.now();
-    this.renderAt(t);
-    requestAnimationFrame(() => this.frame());
+    const audio = this.music.now();
+    if (ts === undefined || this.vt == null || !this.music.playing || this.lastTs == null) this.vt = audio;
+    else {
+      const dt = Math.min(0.1, (ts - this.lastTs) / 1000);
+      this.vt += dt;
+      const err = audio - this.vt;
+      if (Math.abs(err) > 0.08) this.vt = audio;      // seek, stall or tab switch
+      else this.vt += err * 0.03;                      // ~0.5 s to absorb drift
+    }
+    this.lastTs = ts;
+    this.renderAt(this.vt);
+    requestAnimationFrame((t) => this.frame(t));
   }
 
   renderAt(t) {

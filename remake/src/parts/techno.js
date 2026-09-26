@@ -81,6 +81,9 @@ function barPal(c) {
     Math.min(63, trunc(b * (10 + trunc(c * 5 / 9)) / 10))]);
 }
 
+// value table stepped once per retrace, sampled at fractional retrace x
+const stepLerp = (arr, x) => { const i = Math.max(0, Math.min(arr.length - 1, Math.floor(x))), j = Math.min(arr.length - 1, i + 1); return arr[i] + (arr[j] - arr[i]) * Math.max(0, Math.min(1, x - i)); };
+
 export default {
   name: 'Techno',
   credit: 'Psi',
@@ -292,8 +295,7 @@ export default {
     }
     // white flash after the interference (flash 32/64/192/256)
     if (t >= this.tFlash1) {
-      const n = Math.floor((t - this.tFlash1) * FPS);
-      const w = [32, 64, 192, 256][Math.min(3, n)] / 256;
+      const w = stepLerp([32, 64, 192, 256], (t - this.tFlash1) * FPS) / 256;
       for (let i = 0; i < 48; i++) pal[i] = pal[i] * (1 - w) + w;
     }
     // plane-3 wobble rows
@@ -323,14 +325,13 @@ export default {
       const B = this.blocks[b];
       if (t < B.wipe) break;
       const k = (t - B.wipe) * FPS; // wipe iteration
-      const i = Math.min(21, Math.floor(k) + 1);
+      const i = Math.min(21, k + 1);
       cleared = b; zy = i * (i + 1) / 2;
       // flash(a): a = 256 - 32*(i-1) down to 0 -> white fades to palette
       const a = Math.max(0, 256 - 32 * (i - 1));
       white = a / 256;
       if (t >= B.flash) {
-        const n = Math.floor((t - B.flash) * FPS);
-        white = [32, 64, 192, 256][Math.min(3, n)] / 256;
+        white = stepLerp([32, 64, 192, 256], (t - B.flash) * FPS) / 256;
         zy = 200;
       }
     }
@@ -437,8 +438,8 @@ export default {
         const a = i > 0 ? this.slideX[i - 1] : 0;
         xpos = a + (this.slideX[i] - a) * (k - i);
       } else if (t < this.tStatic) {
-        const k = Math.floor(F(t - this.tRipple));
-        xpos = this.rippleX[Math.min(49, k)];
+        const k = F(t - this.tRipple);
+        xpos = stepLerp(this.rippleX.slice(0, 50), k);
         if (k < 16) flashAdd = 45 - k * 3;
       } else xpos = 320;
     }
