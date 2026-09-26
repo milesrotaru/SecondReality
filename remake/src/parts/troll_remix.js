@@ -28,9 +28,9 @@ const float D = 1500.0;
 const float MZ = 260.0;     // mountains' back plane
 const float SKYZ = 700.0;
 const vec3 KEY = normalize(vec3(-0.55, 0.55, -0.62));
-const vec3 KEYC = vec3(2.3, 2.0, 1.7);
+const vec3 KEYC = vec3(1.9, 1.6, 1.3);
 const vec3 RIM = normalize(vec3(0.75, 0.25, 0.6));
-const vec3 RIMC = vec3(0.9, 0.7, 1.6);
+const vec3 RIMC = vec3(1.2, 0.9, 2.2);
 vec2 uvOf(vec2 p){ return vec2((p.x + HALF.x) / (2.0 * HALF.x), (HALF.y - p.y) / (2.0 * HALF.y)); }
 float boxOut(vec2 p){ return length(max(abs(p) - HALF, 0.0)); }
 // m: 1 troll, 2 rock, 3 mountains
@@ -51,7 +51,7 @@ float map(vec3 p, out int m){
 }
 float mapD(vec3 p){ int m; return map(p, m); }
 vec3 normal(vec3 p){
-  vec2 k = vec2(0.7, -0.7);
+  vec2 k = vec2(1.2, -1.2);
   return normalize(k.xyy * mapD(p + k.xyy) + k.yyx * mapD(p + k.yyx) + k.yxy * mapD(p + k.yxy) + k.xxx * mapD(p + k.xxx));
 }
 float softShadow(vec3 p, vec3 l){
@@ -89,11 +89,11 @@ void main(){
   float t = max((-(90.0) - ro.z) / rd.z, 0.0);
   float tEnd = (MZ + 1.0 - ro.z) / rd.z;
   bool hit = false; int m = 0;
-  for (int i = 0; i < 180; i++) {
+  for (int i = 0; i < 240; i++) {
     vec3 p = ro + rd * t;
     float d = map(p, m);
-    if (d < 0.06) { hit = true; break; }
-    t += d;
+    if (d < 0.02) { hit = true; break; }
+    t += d * 0.8;
     if (t > tEnd) break;
   }
   vec3 col;
@@ -103,10 +103,23 @@ void main(){
     vec3 v = -rd;
     vec2 uv = uvOf(p.xy);
     vec3 alb = pow(texture(uAlb, uv).rgb, vec3(2.2));
+    // the painting's brushwork as fine relief (brighter = raised)
+    vec2 tx = 1.0 / vec2(textureSize(uAlb, 0));
+    float l0 = dot(texture(uAlb, uv).rgb, vec3(0.3, 0.5, 0.2));
+    float lx = dot(texture(uAlb, uv + vec2(tx.x, 0.0)).rgb, vec3(0.3, 0.5, 0.2));
+    float ly = dot(texture(uAlb, uv + vec2(0.0, tx.y)).rgb, vec3(0.3, 0.5, 0.2));
+    // (none right at the silhouette, where the painting has its dark outline)
+    float hgt = m == 1 ? texture(uF, uv).g : (m == 2 ? texture(uF, uv).a : texture(uG, uv).g);
+    float bump = (m == 1 ? 1.2 : 2.0) * smoothstep(1.0, 8.0, hgt);
+    n = normalize(n + vec3(-(lx - l0), (ly - l0), 0.0) * bump);
+    // painted crevices hold shadow
+    float cavity = smoothstep(0.05, 0.3, l0);
     float metal = 0.0, rough = 0.5, sss = 0.0;
     if (m == 1) {
       float arm = texture(uG, uv).b;
-      metal = arm * 0.85; rough = mix(0.45, 0.28, arm); sss = 1.0 - arm;
+      // waxy skin, worn metal (scuffs vary the roughness)
+      float scuff = fbm2(p.xy * vec2(0.9, 0.25) + 3.0, 4);
+      metal = arm * 0.85; rough = mix(0.62, mix(0.22, 0.5, scuff), arm); sss = 1.0 - arm;
     } else if (m == 2) {
       rough = 0.9;
       alb *= 0.8 + 0.4 * fbm2(p.xy / 7.0, 4);
@@ -123,13 +136,17 @@ void main(){
     float Dg = r2 * r2 / (3.14159 * dd * dd);
     vec3 F = F0 + (1.0 - F0) * pow(1.0 - max(dot(h, v), 0.0), 5.0);
     float wrap = max((nl + 0.3 * sss) / (1.0 + 0.3 * sss), 0.0);
-    col = KEYC * sh * (wrap * alb * (1.0 - metal) * 0.9 + Dg * F * max(nl, 0.0) * 0.25);
+    // the painting already carries its light: keep it as the base and let the
+    // 3D light modulate it (shadows, turning away), plus sheen on the metal
+    float lit = mix(0.45, 1.0, wrap * sh);
+    col = alb * lit * 1.05 * (1.0 - metal * 0.5) + KEYC * sh * Dg * F * max(nl, 0.0) * mix(0.05, 0.3, metal);
+    col *= mix(0.7, 1.0, cavity);
     // purple rim from the sky behind
     float rim = pow(1.0 - max(dot(n, v), 0.0), 3.0) * max(dot(n, RIM), 0.0);
-    col += RIMC * rim * (0.6 + metal);
-    col += alb * vec3(0.22, 0.2, 0.34) * a * (0.5 + 0.5 * n.y);
+    col += RIMC * rim * (0.35 + metal) * smoothstep(1.0, 6.0, hgt);
+    col += alb * vec3(0.1, 0.09, 0.16) * a * (0.5 + 0.5 * n.y);
     vec3 Fv = F0 + (1.0 - F0) * pow(1.0 - max(dot(n, v), 0.0), 5.0);
-    col += mix(vec3(0.25, 0.22, 0.35), vec3(0.6, 0.55, 0.9), n.y * 0.5 + 0.5) * Fv * a * (0.4 + metal);
+    col += mix(vec3(0.25, 0.22, 0.35), vec3(0.6, 0.55, 0.9), n.y * 0.5 + 0.5) * Fv * a * (0.15 + metal * 0.9) * smoothstep(1.0, 6.0, hgt);
     // warm subsurface glow through thin skin edges
     col += alb * vec3(1.0, 0.45, 0.2) * sss * max(-nl, 0.0) * 0.25;
     if (m == 3) col = mix(col, skyCol(rd, p.xy) * 1.1, 0.22);
