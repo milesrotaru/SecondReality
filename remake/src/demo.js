@@ -69,6 +69,7 @@ export class Demo {
       part.planner = P;
       const end = part.plan(P, t);
       part.end = end;
+      if (part.fades) (this.fades ||= []).push(...part.fades);
       this.timeline.push(part);
       t = end;
     }

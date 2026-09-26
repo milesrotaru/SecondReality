@@ -39,7 +39,7 @@ export class Picture {
     this.R = R;
     this.w = pic.w; this.h = pic.h;
     this.pix = pic.pix; this.pal = pic.pal;
-    this.tex = R.texture(pic.w, pic.h, { data: palToRGBA(pic.pix, pic.pal, opts.alphaIndex ?? -1), filter: R.gl.LINEAR, wrap: opts.wrap });
+    this.tex = R.texture(pic.w, pic.h, { data: pic.rgba ?? palToRGBA(pic.pix, pic.pal, opts.alphaIndex ?? -1), filter: R.gl.LINEAR, wrap: opts.wrap });
     this.prog = R.program(VS, FS);
   }
   // dst in virtual screen coords (default 320 x h), src in texels

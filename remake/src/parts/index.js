@@ -17,6 +17,8 @@ import jplogo from './jplogo.js';
 import u2e from './u2e.js';
 import endlogo from './endlogo.js';
 import cred from './cred.js';
+import endscrl from './endscrl.js';
+import u2end from './u2end.js';
 
 export const PARTS = [
   { music: [0, 0] },
@@ -41,4 +43,6 @@ export const PARTS = [
   u2e,
   endlogo,
   cred,
+  endscrl,
+  u2end,
 ];

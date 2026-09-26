@@ -83,7 +83,8 @@ class App {
     gl.clear(gl.COLOR_BUFFER_BIT);
     R.bindTarget(null);
     const part = this.demo.partAt(t);
-    if (part && t < this.demo.end) part.render(R, t);
+    const last = this.demo.timeline[this.demo.timeline.length - 1];
+    if (part && (t < this.demo.end || part === last)) part.render(R, t); // the end screen stays up
     this.t = t;
     this.partName = part && part.name;
   }

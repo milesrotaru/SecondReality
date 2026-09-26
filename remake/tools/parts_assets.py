@@ -396,3 +396,32 @@ def cred(pk):
 
 
 ALL += [cred]
+
+
+def endscrl(pk):
+    """ENDSCRL: the shipped scroll text (MAIN/DATA/ENDSCROL.TXT, read at run
+    time by the part) and its font. The released FONA.INC lacks glyphs the
+    shipped font has (Y, Z, /, &...), so data/endscrl_font.png (+ .json:
+    char -> [x, width]) was cut from a capture of the released binary,
+    segmenting each fully visible line on the 2-pixel glyph gaps."""
+    import json
+    from PIL import Image
+    here = os.path.join(os.path.dirname(__file__), '..', 'data')
+    im = Image.open(os.path.join(here, 'endscrl_font.png')).convert('L')
+    pk.add('endscrl.font', im.tobytes(), w=im.size[0], h=im.size[1])
+    pk.json('endscrl.glyphs', json.load(open(os.path.join(here, 'endscrl_font.json'))))
+    pk.add('endscrl.text', fc.read('MAIN/DATA', 'ENDSCROL.TXT'))
+
+
+ALL += [endscrl]
+
+
+def u2end(pk):
+    """The closing text screen (U2END.BIN in VGA text mode), from the capture
+    with the DOS prompt removed: data/u2end.png, 640x400 RGB."""
+    from PIL import Image
+    im = Image.open(os.path.join(os.path.dirname(__file__), '..', 'data', 'u2end.png')).convert('RGBA')
+    pk.add('u2end.screen', im.tobytes(), w=im.size[0], h=im.size[1])
+
+
+ALL += [u2end]
