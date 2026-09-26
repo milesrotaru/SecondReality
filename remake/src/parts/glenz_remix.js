@@ -134,7 +134,7 @@ vec3 boardShade(vec3 p, vec3 n, vec3 rd){
 }
 
 // one wavelength through the scene
-float trace(vec3 ro, vec3 rd, float ior, int ch){
+vec3 traceRGB(vec3 ro, vec3 rd, float ior){
   vec3 thr = vec3(1.0), acc = vec3(0.0);
   bool inA = false, inB = false, bounced = false;
   float dist = 0.0;
@@ -189,13 +189,18 @@ float trace(vec3 ro, vec3 rd, float ior, int ch){
     if (isA) inA = !exiting; else inB = !exiting;
     ro = p + rd * 2.0;
   }
-  return ch == 0 ? acc.r : (ch == 1 ? acc.g : acc.b);
+  return acc;
 }
 
 void main(){
   vec2 s = vec2(vUv.x * 320.0, (1.0 - vUv.y) * 200.0);
   vec3 rd = normalize(vec3((s.x - 160.0) / 256.0, (s.y - 130.0) / 213.0, 1.0));
   vec3 ro = vec3(0.0);
-  vec3 c = vec3(trace(ro, rd, 1.47, 0), trace(ro, rd, 1.50, 1), trace(ro, rd, 1.535, 2));
+  // dispersion only matters through the glass: rays that miss both solids'
+  // bounding spheres are traced once
+  vec3 c;
+  bool glass = (uNA > 0 && sphHit(ro, rd, uSphA)) || (uNB > 0 && sphHit(ro, rd, uSphB));
+  if (!glass) c = traceRGB(ro, rd, 1.5);
+  else c = vec3(traceRGB(ro, rd, 1.47).r, traceRGB(ro, rd, 1.50).g, traceRGB(ro, rd, 1.535).b);
   o = vec4(c, 1.0);
 }`;

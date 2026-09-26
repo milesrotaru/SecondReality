@@ -75,7 +75,10 @@ void main(){
   vec3 rd = normalize(vec3((s.x - 160.0) / FX, (s.y - 100.0) / FY, 1.0));
   vec3 col = sky(rd) * uSky;
   // march the hill
+  // start the march where the ray meets a plane lifted above the relief
+  float dn = dot(rd, N0);
   float t = 5.0; bool hit = false;
+  if (dn < 0.0) t = max(t, (dot(T0, N0) + 8.0) / dn);
   for (int i = 0; i < 140; i++) {
     vec3 p = rd * t;
     float d = sdHill(p);
@@ -90,13 +93,13 @@ void main(){
     vec2 uv = plane(p);
     // frosted meadow: pale blue, streaked, with the moonlight's soft falloff
     float g1 = fbm2(uv * vec2(0.8, 1.6) + 7.0, 5), g2 = vnoise(uv * vec2(6.0, 14.0));
-    vec3 alb = vec3(0.13, 0.19, 0.38) * (0.45 + 0.9 * g1) * (0.9 + 0.2 * g2);
+    vec3 alb = vec3(0.13, 0.19, 0.38) * (0.62 + 0.55 * g1) * (0.95 + 0.1 * g2);
     float sh = shadowAt(p + n * 0.05);
     float ndl = max(dot(n, L), 0.0);
     vec3 moon = vec3(0.75, 0.85, 1.25) * 1.7;
     vec3 c = alb * (moon * ndl * sh + vec3(0.03, 0.05, 0.1));
     // sparkle of frost
-    c += vec3(0.8, 0.9, 1.2) * step(0.985, hash12(floor(uv * vec2(9.0, 18.0)))) * ndl * sh * 0.8;
+    c += vec3(0.8, 0.9, 1.2) * step(0.994, hash12(floor(uv * vec2(14.0, 28.0)))) * ndl * sh * 0.5;
     // the text, glowing on the slope at the original's font coordinates
     if (uText > 0.5 && uv.y >= -0.5 && uv.y <= 30.5) {
       float fx = uv.x + uScroll;
@@ -117,7 +120,7 @@ void main(){
 }`;
 
 export const LEAF_VS = `#version 300 es
-layout(location=0) in vec2 aCorner;       // x: 0..1 along the midrib, y: -1..1
+layout(location=0) in vec2 aCorner;       // x: 0..1 along the midrib, y: -1..1 (a 5x2 grid)
 layout(location=1) in vec3 aC;            // leaf base
 layout(location=2) in vec3 aA;            // midrib vector
 layout(location=3) in vec4 aS;            // lateral half-width vector, tint
@@ -128,6 +131,7 @@ out vec2 vL;
 out vec3 vN;
 out vec3 vP;
 out float vTint;
+out float vAO;
 void main(){
   // flutter: a small rotation about the stem, per leaf phase
   float ph = dot(aC, vec3(1.3, 2.1, 0.7));
@@ -135,13 +139,20 @@ void main(){
   vec3 A = aA, S = aS.xyz;
   vec3 ax = normalize(A);
   S = S * cos(fl) + cross(ax, S) * sin(fl);
-  vec3 p = aC + A * aCorner.x + S * aCorner.y;
-  // slow sway of the whole bough
+  vec3 N = normalize(cross(A, S));
+  float len = length(A), wid = length(S);
+  // cupped across the midrib, tip curling back
+  float x = aCorner.x, y = aCorner.y;
+  float cup = 0.22 * wid, curl = 0.18 * len * (0.5 + fract(ph * 7.1));
+  vec3 p = aC + A * x + S * y + N * (cup * y * y - curl * x * x);
+  vec3 dx = A - N * (2.0 * curl * x), dy = S + N * (2.0 * cup * y);
   p.x += sin(uTime * 0.6 + p.y * 0.08) * 0.08 * (p.z * 0.05);
   vL = aCorner;
-  vN = normalize(cross(A, S));
+  vN = normalize(cross(dx, dy));
   vP = p;
   vTint = aS.w;
+  // leaves deep inside a cluster (low tint hash) sit in more shade
+  vAO = 0.55 + 0.45 * fract(aS.w * 13.7);
   if (uShadowPass == 1) { vec3 l = lightUV(p); gl_Position = vec4(l.xy * 2.0 - 1.0, l.z * 2.0 - 1.0, 1.0); }
   else gl_Position = project(p);
 }`;
@@ -153,6 +164,7 @@ in vec2 vL;
 in vec3 vN;
 in vec3 vP;
 in float vTint;
+in float vAO;
 out vec4 o;
 uniform sampler2D uShadow;
 uniform int uShadowPass;
@@ -167,32 +179,45 @@ float shadowAt(vec3 p){
     s += texture(uShadow, l.xy + vec2(i, j) * ts) .r < l.z - 0.004 ? 0.0 : 1.0;
   return s / 9.0;
 }
+// oak leaf outline: half-width along the midrib, rounded lobes with deep
+// sinuses, lobes on the two sides slightly offset, a rounded tip
+float halfWidth(float x, float side){
+  float env = pow(max(sin(3.14159 * pow(clamp(x, 0.0, 1.0), 0.8)), 0.0), 0.6);
+  float ph = x * 4.5 + (side > 0.0 ? 0.25 : 0.0);
+  float lobe = 0.5 + 0.5 * pow(abs(cos(ph * 3.14159)), 0.55);
+  return env * mix(0.42, 1.0, lobe) * 0.95;
+}
 void main(){
-  // oak leaf: lobed outline along the midrib
   float x = vL.x;
-  float env = pow(max(sin(3.14159 * pow(x, 0.85)), 0.0), 0.7);
-  float lobes = 0.78 + 0.22 * smoothstep(-0.6, 0.6, cos(x * 3.14159 * 9.0));
-  float w = env * lobes * 0.95;
+  float w = halfWidth(x, vL.y);
   float d = abs(vL.y) - w;
   float aa = fwidth(d) + 1e-3;
   float a = clamp(0.5 - d / aa, 0.0, 1.0);
-  if (x < 0.05) a *= step(abs(vL.y), 0.08);          // stem
+  if (x < 0.07) a = max(a * step(0.07, x), (1.0 - smoothstep(0.05, 0.08, abs(vL.y))) * step(0.0, x));  // stem
   if (a < 0.02) discard;
   if (uShadowPass == 1) { o = vec4(gl_FragCoord.z, 0.0, 0.0, 1.0); return; }
   vec3 n = normalize(vN);
   vec3 v = normalize(-vP);
-  if (dot(n, v) < 0.0) n = -n;
+  bool back = dot(n, v) < 0.0;
+  if (back) n = -n;
+  // veins: midrib and side veins toward each lobe, as relief and colour
+  float mid = exp(-abs(vL.y) * 30.0);
+  float sv = exp(-abs(fract(x * 4.5 + abs(vL.y) * 0.9) - 0.5) * 16.0) * step(abs(vL.y), w * 0.85) * (1.0 - mid);
+  vec3 tint = mix(mix(vec3(0.025, 0.07, 0.02), vec3(0.06, 0.12, 0.03), vTint), vec3(0.11, 0.12, 0.03), step(0.9, fract(vTint * 7.3)) * 0.7);
+  // darker towards the edges, lighter veins; the underside is paler
+  vec3 alb = tint * (0.8 + 0.35 * smoothstep(w, 0.0, abs(vL.y))) * (1.0 + 0.6 * mid + 0.35 * sv);
+  if (back) alb = alb * vec3(1.2, 1.3, 1.1) + vec3(0.01, 0.015, 0.01);
+  n = normalize(n + (dFdx(sv) * vec3(1.0, 0.0, 0.0) + dFdy(sv) * vec3(0.0, 1.0, 0.0)) * 0.3);
   float sh = shadowAt(vP + n * 0.03);
-  vec3 alb = mix(vec3(0.035, 0.09, 0.025), vec3(0.07, 0.13, 0.03), vTint);
-  float vein = exp(-abs(vL.y) * 40.0) * 0.5 + exp(-abs(fract(x * 6.0) - 0.5 - vL.y * 0.8) * 30.0) * 0.15 * step(abs(vL.y), w * 0.8);
-  alb *= 1.0 + vein;
   float ndl = dot(n, L);
   vec3 moon = vec3(0.75, 0.85, 1.25) * 1.1;
-  vec3 c = alb * (moon * max(ndl, 0.0) * sh + vec3(0.02, 0.03, 0.06));
+  vec3 c = alb * (moon * max(ndl, 0.0) * sh + vec3(0.02, 0.03, 0.06) * vAO);
   // light through the leaf, and a waxy sheen
   c += alb * vec3(0.9, 1.4, 0.5) * max(-ndl, 0.0) * sh * 0.8;
   vec3 h = normalize(L + v);
-  c += moon * 0.04 * pow(max(dot(n, h), 0.0), 40.0) * sh;
+  float F = 0.04 + 0.96 * pow(1.0 - max(dot(n, v), 0.0), 5.0);
+  c += moon * (0.05 + F * 0.3) * pow(max(dot(n, h), 0.0), 30.0) * sh;
+  c *= mix(0.7, 1.0, vAO);
   o = vec4(c * uLit, a);
 }`;
 
@@ -237,7 +262,7 @@ void main(){
   vec3 side = normalize(cross(vAx, v));
   vec3 n = normalize(side * vS + v * sqrt(max(1.0 - vS * vS, 0.0)));
   float bark = fbm2(vec2(dot(vP, vAx) * 3.0, vS * 2.0), 4);
-  vec3 alb = vec3(0.06, 0.045, 0.035) * (0.6 + 0.8 * bark);
+  vec3 alb = vec3(0.035, 0.026, 0.02) * (0.5 + 0.9 * bark);
   vec3 moon = vec3(0.75, 0.85, 1.25) * 2.4;
   vec3 c = alb * (moon * max(dot(n, L), 0.0) * 0.8 + vec3(0.02, 0.025, 0.05));
   c += vec3(0.25, 0.3, 0.5) * pow(1.0 - max(dot(n, v), 0.0), 4.0) * 0.15;
@@ -283,7 +308,7 @@ export function buildOak() {
       // leaf clusters along the twig and a rosette at the tip
       for (let i = 2; i <= segs; i++) {
         const b = pts[i];
-        const n = i === segs ? 6 : (i % 2 ? 2 : 0);
+        const n = i === segs ? 6 : 2;
         for (let k = 0; k < n; k++) {
           const ld = norm(add(rotate(d, [R() - 0.5, R() - 0.5, R() - 0.5], 0.6 + R() * 1.4), [0, -0.2, 0]));
           leaf(b, ld, 0.9 + R() * 0.6);
@@ -301,9 +326,9 @@ export function buildOak() {
     }
   };
   // three limbs entering from the lower right, reaching up and left
-  grow([15, 15, 9.5], [-0.55, -0.72, 0.28], 17, 0.42, 0);
-  grow([5, 17, 12], [-0.12, -0.92, 0.3], 15, 0.36, 0);
-  grow([19, 3, 11], [-0.55, -0.55, 0.5], 14, 0.34, 0);
+  grow([15, 15, 9.5], [-0.55, -0.72, 0.28], 17, 0.6, 0);
+  grow([5, 17, 12], [-0.12, -0.92, 0.3], 15, 0.52, 0);
+  grow([19, 3, 11], [-0.55, -0.55, 0.5], 14, 0.48, 0);
   return { branches: new Float32Array(branches.flat()), leaves: new Float32Array(leaves.flat()) };
 }
 

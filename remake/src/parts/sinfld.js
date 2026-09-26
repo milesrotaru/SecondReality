@@ -171,10 +171,8 @@ void main(){
     vec3 base = pow(pal(T + 140.0 - j / 8.0), vec3(2.2));
     vec3 L = normalize(vec3(0.6, 0.25, 0.35));
     float ndl = max(dot(n, L), 0.0);
-    vec3 h = normalize(L + v);
-    float spec = pow(max(dot(n, h), 0.0), 18.0);
     float F = 0.04 + 0.96 * pow(1.0 - max(dot(n, v), 0.0), 5.0);
-    vec3 c = base * (0.25 + 1.3 * ndl) + vec3(0.5, 0.6, 1.1) * spec * 0.25 + vec3(0.08, 0.1, 0.3) * F * 0.5;
+    vec3 c = base * (0.25 + 1.3 * ndl) + vec3(0.08, 0.1, 0.3) * F * 0.35;
     // haze with distance
     float fog = smoothstep(60.0, 190.0, j);
     c = mix(c, vec3(0.03, 0.015, 0.08), fog * 0.6);

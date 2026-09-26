@@ -104,12 +104,19 @@ export default {
     const gl = R.gl;
     const oak = MX.buildOak();
     const quad = new Float32Array([0, -1, 1, -1, 1, 1, 0, -1, 1, 1, 0, 1]);
-    const mk = (data, layout, stride) => {
+    // leaves are a 5 x 2 grid so they can cup and curl
+    const grid = [];
+    for (let i = 0; i < 5; i++) for (let j = 0; j < 2; j++) {
+      const x0 = i / 5, x1 = (i + 1) / 5, y0 = j - 1, y1 = j;
+      grid.push(x0, y0, x1, y0, x1, y1, x0, y0, x1, y1, x0, y1);
+    }
+    const leafQuad = new Float32Array(grid);
+    const mk = (data, layout, stride, corners = quad) => {
       const vao = gl.createVertexArray();
       gl.bindVertexArray(vao);
       const q = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, q);
-      gl.bufferData(gl.ARRAY_BUFFER, quad, gl.STATIC_DRAW);
+      gl.bufferData(gl.ARRAY_BUFFER, corners, gl.STATIC_DRAW);
       gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
       const b = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, b);
@@ -117,13 +124,13 @@ export default {
       let off = 0;
       layout.forEach((n, i) => { gl.enableVertexAttribArray(i + 1); gl.vertexAttribPointer(i + 1, n, gl.FLOAT, false, stride * 4, off * 4); gl.vertexAttribDivisor(i + 1, 1); off += n; });
       gl.bindVertexArray(null);
-      return { vao, count: data.length / stride };
+      return { vao, count: data.length / stride, verts: corners.length / 2 };
     };
     const X = this.rx = {
       hill: R.fsProgram(MX.HILL_FS),
       leafP: R.program(MX.LEAF_VS, MX.LEAF_FS),
       branchP: R.program(MX.BRANCH_VS, MX.BRANCH_FS),
-      leaves: mk(oak.leaves, [3, 3, 4], 10),
+      leaves: mk(oak.leaves, [3, 3, 4], 10, leafQuad),
       branches: mk(oak.branches, [4, 4], 8),
       noise: MX.getNoiseTex(R),
     };
@@ -155,7 +162,7 @@ export default {
     gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, X.branches.count);
     set(X.leafP);
     gl.bindVertexArray(X.leaves.vao);
-    gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, X.leaves.count);
+    gl.drawArraysInstanced(gl.TRIANGLES, 0, X.leaves.verts, X.leaves.count);
     gl.bindVertexArray(null);
   },
 
