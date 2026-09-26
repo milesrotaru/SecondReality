@@ -11,7 +11,8 @@ export default {
 
   init(R, A) {
     const pic = A.pic('techno.troll');
-    this.troll = new Picture(R, pic);
+    // fadepals[] start at byte 3: colour 0 (the black surround) never whitens
+    this.troll = new Picture(R, pic, { alphaIndex: 0 });
     // colour of the collapsed line: the picture's middle rows, averaged
     let r = 0, g = 0, b = 0, n = 0;
     for (let y = 196; y < 204; y++) for (let x = 60; x < 260; x++) {
@@ -39,10 +40,14 @@ export default {
     gl.clearColor(0, 0, 0, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
     const F = (x) => x * FPS;
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     if (t < this.tSquash) {
-      // the switch-over frames: white flash with the half-height copy
-      gl.clearColor(1, 1, 1, 1); gl.clear(gl.COLOR_BUFFER_BIT); gl.clearColor(0, 0, 0, 1);
-      this.troll.draw({ screen: [320, 200], dst: [0, 75, 320, 125], mix: [1, 1, 1, 3 / 64] });
+      // switch-over: one frame with colour 0 set white (fadepals[3]), then fadepals[20]
+      const first = t < this.t0 + 1 / FPS;
+      if (first) { gl.clearColor(1, 1, 1, 1); gl.clear(gl.COLOR_BUFFER_BIT); gl.clearColor(0, 0, 0, 1); }
+      this.troll.draw({ screen: [320, 200], dst: [0, 75, 320, 125], mix: [1, 1, 1, (first ? 3 : 20) / 64] });
+      gl.disable(gl.BLEND);
       return;
     }
     if (t < this.tLine) {
@@ -52,8 +57,10 @@ export default {
       const a = a0 + (a1 - a0) * (k - i);
       const white = (63 - a) / 64;
       this.troll.draw({ screen: [320, 200], dst: [0, 100 - a / 2, 320, 100 + a / 2], mix: [1, 1, 1, white] });
+      gl.disable(gl.BLEND);
       return;
     }
+    gl.disable(gl.BLEND);
     const c = this.lineCol.map((v) => v + (1 - v) * 61 / 64);
     if (t < this.tDot) {
       const k = F(t - this.tLine);

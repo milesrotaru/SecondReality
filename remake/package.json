@@ -6,7 +6,7 @@
   "scripts": {
     "assets": "python3 tools/build_assets.py",
     "build": "node tools/build.mjs",
-    "dev": "http-server -p 8080 -c-1 ."
+    "dev": "python3 -m http.server 8080"
   },
   "devDependencies": {
     "esbuild": "^0.24.0"

@@ -7,6 +7,15 @@ import { PARTS } from './parts/index.js';
 
 const qs = new URLSearchParams(location.search);
 
+// Display names for the parts (after the comments in MAIN/U2.ASM)
+const TITLES = {
+  Alku: 'Opening credits', U2A: 'Vector part I', PAM: 'Explosion', Title: 'Title picture', Glenz: 'Glenz vectors',
+  Tunneli: 'Dot tunnel', Techno: 'Techno circles', Panic: 'Panic', Mountain: 'Hill scroller', Lens: 'Lens and rotozoomer',
+  Plasma: 'Plasma and plasma cube', Minvball: 'Vector balls', Rayscrl: 'Mirror-ball scroller', '3DSinfld': 'Sine landscape',
+  JPLogo: 'Jelly picture', U2E: 'Vector part II', EndLogo: 'End picture', Cred: 'Credits', EndScroll: 'Greetings',
+};
+const clock = (t) => Math.floor(t / 60) + ':' + String(Math.floor(t % 60)).padStart(2, '0');
+
 async function loadPack() {
   let bytes;
   if (window.SR_PACK_B64) {
@@ -108,23 +117,40 @@ async function boot() {
     throw e;
   }
   const t0 = parseFloat(qs.get('t') || '0') || (qs.get('part') ? (app.demo.timeline.find((p) => p.name.toLowerCase() === qs.get('part').toLowerCase()) || { start: 0 }).start : 0);
+  const overlay = document.getElementById('start');
   if (qs.get('capture') === '1') {
     // headless capture mode: render exact times on demand
-    document.getElementById('start').style.display = 'none';
+    overlay.hidden = true;
     window.SR_READY = true;
     return;
   }
-  const overlay = document.getElementById('start');
-  const go = async () => {
-    overlay.style.display = 'none';
-    await app.start(t0);
+  const go = async (t) => {
+    overlay.hidden = true;
+    await app.start(t);
   };
-  overlay.addEventListener('click', go, { once: true });
+  const btn = document.getElementById('go');
+  btn.disabled = false;
+  btn.textContent = t0 > 0 ? 'Start at ' + clock(t0) : 'Start the demo';
+  btn.addEventListener('click', () => go(t0), { once: true });
+  btn.focus();
+  const list = document.getElementById('parts');
+  for (const p of app.demo.timeline) {
+    if (!TITLES[p.name]) continue;
+    const li = document.createElement('li');
+    li.innerHTML = `<a href="#" data-t="${p.start}">${TITLES[p.name]}</a> <span>${clock(p.start)}</span>`;
+    list.appendChild(li);
+  }
+  list.addEventListener('click', (e) => {
+    const a = e.target.closest('a');
+    if (!a) return;
+    e.preventDefault();
+    go(parseFloat(a.dataset.t));
+  });
   window.addEventListener('keydown', (e) => {
-    if (overlay.style.display !== 'none' && (e.key === 'Enter' || e.key === ' ')) { go(); return; }
+    if (!overlay.hidden) return;
     if (e.key === 'ArrowRight') app.seekPart(1);
     else if (e.key === 'ArrowLeft') app.seekPart(-1);
-    else if (e.key === 'f' || e.key === 'F') (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen());
+    else if (e.key === 'f' || e.key === 'F') (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.())?.catch?.(() => {});
     else if (e.key === 'm' || e.key === 'M') app.music.setMuted(!app.music.muted);
     else if (e.key === ' ') { if (app.music.playing) app.music.pause(); else app.music.play(app.music.now()); }
   });
