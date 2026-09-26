@@ -9,6 +9,7 @@
 import { FPS } from '../demo.js';
 import { GLSL_BICUBIC } from '../gfx/common.js';
 import { palToRGBA } from '../gfx/gl.js';
+import * as RX from './rayscrl_remix.js';
 
 const FS = `#version 300 es
 precision highp float;
@@ -70,6 +71,23 @@ export default {
     this.tMain = P.until(this.tIn + F(127), (p) => p.ord !== co && p.row >= 16);
     this.tF = P.until(this.tMain + F(2), (p) => p.musplus === -11);
     return this.tF + F(65);
+  },
+
+  // remix: the scene raytraced live (rayscrl_remix.js)
+  renderRemix(R, t, post) {
+    if (!this.rx) this.rx = { prog: R.fsProgram(RX.RAY_FS), card: RX.cardBasis(), sph: RX.spheres(), rip: RX.rippleCentre() };
+    const X = this.rx;
+    const F = (x) => x * FPS;
+    const fin = Math.max(0, Math.min(63, F(t - this.tIn) / 2)) / 63;
+    const fout = t >= this.tF ? Math.min(64, F(t - this.tF)) / 64 : 0;
+    const n = t >= this.tMain ? (F(t - this.tMain) + 1) / 3 : 0;
+    post.begin({ samples: 1 });
+    X.prog.use().tex('uStrip', this.fontTex).f('uN', n).fv('uSph', X.sph, 4)
+      .f('uCA', ...X.card[0]).f('uCB', ...X.card[1]).f('uCC', ...X.card[2]).f('uRip', ...X.rip)
+      .f('uTime', t).f('uFade', fin, fout);
+    R.drawFullscreen();
+    post.end(t, { exposure: 1.0, bloom: 0.1, grain: 0.02, vignette: 0.3 });
+    return true;
   },
 
   render(R, t) {
