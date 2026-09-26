@@ -15,6 +15,8 @@ import rayscrl from './rayscrl.js';
 import sinfld from './sinfld.js';
 import jplogo from './jplogo.js';
 import u2e from './u2e.js';
+import endlogo from './endlogo.js';
+import cred from './cred.js';
 
 export const PARTS = [
   { music: [0, 0] },
@@ -37,4 +39,6 @@ export const PARTS = [
   jplogo,
   { music: [0, 18] },
   u2e,
+  endlogo,
+  cred,
 ];

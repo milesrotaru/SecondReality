@@ -1,4 +1,5 @@
 """Per-part asset extraction. Each function takes the Pack and adds entries."""
+import os
 import struct
 import fcdata as fc
 
@@ -332,21 +333,19 @@ def coman(pk):
 ALL += [coman]
 
 
-def jplogo(pk):
-    """JPLOGO (Psi): the 'readp' RLE picture linked as _pic (header magic,
+def readp_obk(*path):
+    """Decode a 'readp' RLE picture linked as an OMF object (header magic,
     wid, hig, cols, add; palette at +16; rows at add*16, each a word length
     then bytes where b&0x80 means a run of b&0x7f copies of the next byte).
-    The part uses 184 columns from x=70 of all 400 rows plus an edge column
-    of colour 65, and remaps colour 0 to 64 (black)."""
+    Returns (rows, palette)."""
     import omf
-    _, segs, _ = omf.parse(fc.path('JPLOGO', '_PIC.OBK'))
+    _, segs, _ = omf.parse(fc.path(*path))
     src = bytes(segs[1])
     magic, wid, hig, cols, add = struct.unpack('<5H', src[:10])
     pal = bytearray(src[16:16 + cols * 3]).ljust(768, b'\0')
-    pal[64 * 3:64 * 3 + 3] = b'\0\0\0'
     p = add * 16
-    pix = bytearray()
-    for y in range(400):
+    rows = []
+    for y in range(hig):
         n = struct.unpack('<H', src[p:p + 2])[0]
         q, end, row = p + 2, p + 2 + n, bytearray()
         while q < end:
@@ -358,10 +357,42 @@ def jplogo(pk):
             else:
                 row.append(b)
         p = end
-        row = row.ljust(640, b'\0')
-        r = bytearray(row[70:70 + 184]) + b'\x41'
-        pix += bytes(64 if v == 0 else v for v in r[:184]) + b'\x41'
+        rows.append(bytes(row.ljust(wid, b'\0')))
+    return rows, pal
+
+
+def jplogo(pk):
+    """JPLOGO (Psi): 184 columns from x=70 of the 400 rows plus an edge
+    column of colour 65; colour 0 remapped to 64 (black)."""
+    rows, pal = readp_obk('JPLOGO', '_PIC.OBK')
+    pal[64 * 3:64 * 3 + 3] = b'\0\0\0'
+    pix = bytearray()
+    for row in rows[:400]:
+        pix += bytes(64 if v == 0 else v for v in row[70:70 + 184]) + b'\x41'
     pk.pic('jp.pic', 185, 400, pix, pal)
 
 
-ALL += [jplogo]
+def endlogo(pk):
+    """ENDLOGO: the 320x400 end picture (END/_PIC.OBK)."""
+    rows, pal = readp_obk('END', '_PIC.OBK')
+    pk.pic('end.pic', 320, 400, b''.join(r[:320] for r in rows[:400]), pal)
+
+
+ALL += [jplogo, endlogo]
+
+
+def cred(pk):
+    """CRED: the 32x1500 credits font (FONA.INC, values 0..9 = grey 7*v) and
+    the 21 160x100 screen pictures. The released PICS/*.LBM differ from the
+    shipped ones (PIC02 is a 'PARTPIC MISSING' placeholder), so the pictures
+    come from data/cred_pics.png, cropped losslessly from a DOSBox capture
+    of the released binary (21 stacked 160x100 RGB frames)."""
+    from PIL import Image
+    f = fc.parse_inc('CREDITS/FONA.INC')
+    assert len(f) >= 32 * 1500
+    pk.add('cred.font', bytes(v & 0xff for v in f[:32 * 1500]), w=1500, h=32)
+    im = Image.open(os.path.join(os.path.dirname(__file__), '..', 'data', 'cred_pics.png')).convert('RGB')
+    pk.add('cred.pics', im.tobytes(), w=160, h=100, n=im.size[1] // 100)
+
+
+ALL += [cred]
