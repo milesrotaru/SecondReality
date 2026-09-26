@@ -10,6 +10,7 @@
 // light (what a CRT does with the flicker); the cube texture is evaluated
 // analytically with the original's scanline-affine mapping, antialiased.
 import { FPS } from '../demo.js';
+import * as PX from './plz_remix.js';
 
 const PI2 = Math.PI * 2;
 
@@ -295,6 +296,65 @@ export default {
       gl.drawArrays(gl.TRIANGLE_FAN, 0, 4);
     }
     R.present(T);
+  },
+
+  // ---------------- remix (plz_remix.js) ----------------
+  initRemix(R) {
+    this.rx = { slab: R.fsProgram(PX.SLAB_FS), cube: R.fsProgram(PX.CUBE_FS) };
+    // per face slot (by outward local normal): affine local -> texcoord maps
+    const slotOf = (n) => (n[2] > 0.5 ? 0 : n[2] < -0.5 ? 1 : n[0] > 0.5 ? 2 : n[0] < -0.5 ? 4 : n[1] < -0.5 ? 3 : 5);
+    const Ax = new Float32Array(24), Ay = new Float32Array(24), blk = new Int32Array(6);
+    const Tc = [[64, 4], [190, 4], [190, 60], [64, 60]];
+    for (const [a, b, c, d, col] of CUBE_FACES) {
+      const P = [a, b, c, d].map((i) => CUBE_PTS[i]);
+      const ctr = [0, 1, 2].map((k) => (P[0][k] + P[2][k]) / 2);
+      const n = ctr.map((v) => Math.sign(Math.round(v)));
+      const sl = slotOf(n);
+      const e1 = [0, 1, 2].map((k) => P[1][k] - P[0][k]), e2 = [0, 1, 2].map((k) => P[3][k] - P[0][k]);
+      const l1 = e1.reduce((s, v) => s + v * v, 0), l2 = e2.reduce((s, v) => s + v * v, 0);
+      for (let j = 0; j < 2; j++) {
+        const du = Tc[1][j] - Tc[0][j], dv = Tc[3][j] - Tc[0][j];
+        const g = [0, 1, 2].map((k) => e1[k] / l1 * du + e2[k] / l2 * dv);
+        const off = Tc[0][j] - (g[0] * P[0][0] + g[1] * P[0][1] + g[2] * P[0][2]);
+        (j === 0 ? Ax : Ay).set([...g, off], sl * 4);
+      }
+      blk[sl] = col;
+    }
+    this.rx.Ax = Ax; this.rx.Ay = Ay; this.rx.blk = blk;
+  },
+
+  renderRemix(R, t, post) {
+    if (!this.rx) this.initRemix(R);
+    const gl = R.gl, X = this.rx;
+    let fade = [0, 0, 0, 0];
+    post.begin({ samples: 1 });
+    if (t < this.tP) fade = [1, 1, 1, 1];
+    else if (t < this.tPlzEnd) {
+      const s = this.plasma(t);
+      if (s.lc <= 400) {
+        if (this.palDirty) { R.update(this.palTex, this.palData, { internal: gl.RGBA32F, format: gl.RGBA, type: gl.FLOAT }); this.palDirty = false; }
+        X.slab.use().tex('uPal', this.palTex).f('uK', ...s.K).f('uL', ...s.L).f('uDrop', s.lc - 60.5).f('uTime', t);
+        R.drawFullscreen();
+      }
+    } else if (t >= this.tV) {
+      const frames = Math.max(0, (t - this.tV) * FPS - 4);
+      const [tx, ty, dis, kx, ky, kz, lkx, lky] = this.spline(4 * 256 + frames * 4);
+      const ang = (k) => k * PI2 / 1024;
+      const SX = Math.sin(ang(kx)), CX = Math.cos(ang(kx)), SY = Math.sin(ang(ky)), CY = Math.cos(ang(ky)), SZ = Math.sin(ang(kz)), CZ = Math.cos(ang(kz));
+      const M = [
+        [CY * CZ, CY * SZ, -SY],
+        [SX * CZ * SY - CX * SZ, SX * SY * SZ + CX * CZ, CY * SX],
+        [CX * CZ * SY + SX * SZ, CX * SY * SZ - SX * CZ, CY * CX],
+      ];
+      const la = ang(lkx), lb = ang(lky);
+      const ls = [Math.sin(la) * Math.sin(lb), Math.cos(la), Math.sin(la) * Math.cos(lb)];
+      X.cube.use().m3('uM', new Float32Array([M[0][0], M[1][0], M[2][0], M[0][1], M[1][1], M[2][1], M[0][2], M[1][2], M[2][2]]))
+        .f('uT', tx, ty, dis).fv('uAx', X.Ax, 4).fv('uAy', X.Ay, 4).f('uDD', frames + 1).f('uLs', ...ls).f('uFade', 1);
+      gl.uniform1iv(X.cube.u('uBlk'), X.blk);
+      R.drawFullscreen();
+    }
+    post.end(t, { exposure: 1.0, bloom: 0.1, grain: 0.02, vignette: 0.3, fade });
+    return true;
   },
 
   render(R, t) {
