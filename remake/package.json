@@ -1,0 +1,14 @@
+{
+  "name": "second-reality-hd",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "assets": "python3 tools/build_assets.py",
+    "build": "node tools/build.mjs",
+    "dev": "http-server -p 8080 -c-1 ."
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  }
+}

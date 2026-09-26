@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Second Reality HD</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+  #status { position: fixed; left: 16px; bottom: 12px; color: #6cf; font: 13px/1.4 monospace; }
+  #start { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; cursor: pointer;
+           color: #9ab; font: 15px/1.6 monospace; text-align: center; background: #000; }
+  #start b { color: #fff; letter-spacing: .6em; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="start"><div><b>SECOND REALITY</b><br>Future Crew 1993 &mdash; HD reinterpretation<br><br>click to start</div></div>
+<div id="status"></div>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
