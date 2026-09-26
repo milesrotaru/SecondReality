@@ -14,6 +14,7 @@ import minvball from './minvball.js';
 import rayscrl from './rayscrl.js';
 import sinfld from './sinfld.js';
 import jplogo from './jplogo.js';
+import u2e from './u2e.js';
 
 export const PARTS = [
   { music: [0, 0] },
@@ -34,4 +35,6 @@ export const PARTS = [
   rayscrl,
   sinfld,
   jplogo,
+  { music: [0, 18] },
+  u2e,
 ];
