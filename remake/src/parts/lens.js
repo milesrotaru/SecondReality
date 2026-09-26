@@ -9,6 +9,7 @@
 import { FPS } from '../demo.js';
 import { GLSL_BICUBIC } from '../gfx/common.js';
 import { palToRGBA } from '../gfx/gl.js';
+import { LensScene } from './lens_remix.js';
 
 const COMMON = `#version 300 es
 precision highp float;
@@ -132,6 +133,7 @@ export default {
     const pic = A.pic('lens.back');
     const rgba = palToRGBA(pic.pix, pic.pal);
     this.backTex = R.texture(320, 200, { data: rgba, filter: gl.LINEAR });
+    this.A = A;
     // torus source: columns 32..287 of the picture, repeating horizontally
     const crop = new Uint8Array(256 * 200 * 4);
     for (let y = 0; y < 200; y++) crop.set(rgba.subarray((y * 320 + 32) * 4, (y * 320 + 288) * 4), y * 256 * 4);
@@ -157,6 +159,45 @@ export default {
     this.t3 = this.t2 + F(721);
     this.tEnd = Math.min(this.t3 + F(2000), P.until(this.t3, (p) => p.musplus > -4));
     return this.tEnd + F(2);
+  },
+
+  // remix: see lens_remix.js
+  renderRemix(R, t, post) {
+    const F = (x) => x * FPS;
+    if (!this.scene) this.scene = new LensScene(R, this.A);
+    const S = this.scene;
+    const light = [-0.55 + 0.25 * Math.sin(t * 0.3), -0.65, -1.0];
+    let fade = [0, 0, 0, 0];
+    post.begin({ samples: 1 });
+    if (t < this.t2) {
+      S.drawFace(R, { steps: Math.min(480, Math.max(0, 6 * F(t - this.t1))), time: t, light });
+    } else if (t < this.t3) {
+      const uf = F(t - this.t2);
+      const k = Math.min(714, Math.max(0, uf));
+      const i = Math.min(713, Math.floor(k)), fr = k - i;
+      const P1 = this.path1;
+      const x = P1[i * 2] + (P1[i * 2 + 2] - P1[i * 2]) * fr;
+      const y = P1[i * 2 + 1] + (P1[i * 2 + 3] - P1[i * 2 + 1]) * fr;
+      const a = Math.min(31, Math.max(0, (uf - 32) / 2));
+      const tint = this.tints[0].map((v) => Math.max(0.15, v));
+      S.drawFace(R, { lens: [x + 0.5, (y + 0.5) * 1.2, -80, 68], clear: a / 31, tint, time: t, light });
+    } else if (t >= this.tEnd) {
+      fade = [1, 1, 1, 1];
+    } else {
+      const f = F(t - this.t3);
+      if (f >= 1) {
+        const k = Math.min(1999, f);
+        const i = Math.min(1998, Math.floor(k)), fr = k - i;
+        const P2 = this.path2, v = [];
+        for (let j = 0; j < 4; j++) v.push(P2[i * 4 + j] + (P2[i * 4 + 4 + j] - P2[i * 4 + j]) * fr);
+        const flash = f < 16 ? Math.max(0, (15 - f) * 5) / 63 : 0;
+        const white = f > 1872 ? Math.min(63, (f - 1872) / 2) / 63 : 0;
+        S.drawRoto(R, { path: v, fade: [flash, 0], time: t });
+        fade = [1, 1, 1, white];
+      }
+    }
+    post.end(t, { exposure: 1.0, bloom: 0.08, grain: 0.02, vignette: 0.3, fade });
+    return true;
   },
 
   render(R, t) {
