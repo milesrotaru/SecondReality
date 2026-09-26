@@ -5,6 +5,7 @@
 import { FPS } from '../demo.js';
 import { GLSL_BICUBIC, layoutText, clamp01 } from '../gfx/common.js';
 import { Horizon } from './horizon.js';
+import { Moon, CAM_H } from './moon_remix.js';
 
 const SCRLF = 9;
 
@@ -98,7 +99,7 @@ export default {
     }
   },
 
-  drawText(R, blocks, alpha, colors) {
+  drawText(R, blocks, alpha, colors, add = false) {
     if (!blocks.length || alpha <= 0) return;
     const gl = R.gl;
     const verts = [];
@@ -119,11 +120,48 @@ export default {
     const p = this.textProg.use();
     p.tex('uFont', this.fontTex).f('uC1', ...colors[0]).f('uC2', ...colors[1]).f('uC3', ...colors[2]).f('uAlpha', alpha);
     gl.enable(gl.BLEND);
-    // screen blend: dst + src*(1-dst)
-    gl.blendFunc(gl.ONE_MINUS_DST_COLOR, gl.ONE);
+    // screen blend: dst + src*(1-dst); additive light in the remix's HDR
+    if (add) gl.blendFunc(gl.ONE, gl.ONE); else gl.blendFunc(gl.ONE_MINUS_DST_COLOR, gl.ONE);
     gl.drawArrays(gl.TRIANGLES, 0, verts.length / 4);
     gl.disable(gl.BLEND);
     gl.bindVertexArray(null);
+  },
+
+  // ---- remix: the painting becomes the moonscape (moon_remix.js); the
+  // scroll is a pan that ends on U2A's camera. Text is added as light.
+  renderRemix(R, t, post) {
+    const ev = this.ev;
+    const f = (n) => n / FPS;
+    if (!this.moon) this.moon = Moon.get(R);
+    post.begin({ samples: 1 });
+    // text in HDR: linear, a little over white so it blooms
+    const cols = [this.c1, this.c2, this.c3].map((c) => c.map((v) => Math.pow(v, 2.2) * 2.2));
+    const card = (ts, name) => {
+      const lt = t - ts;
+      if (lt < 0 || lt > f(428)) return;
+      let a = 1;
+      if (lt < f(64)) a = lt / f(64);
+      else if (lt > f(364)) a = 1 - (lt - f(364)) / f(64);
+      this.drawText(R, this.textBlocks(name), clamp01(a), cols, true);
+    };
+    if (t < ev.pic) {
+      card(ev.t1, 'fc');
+      card(ev.t2, 'asm');
+      card(ev.t3, 'dolby');
+    } else {
+      const scroll = Math.min(319, (t - ev.pic) * FPS / SCRLF);
+      const k = 1 - scroll / 319, ke = k * k * (3 - 2 * k) * 0.35 + k * 0.65;
+      this.moon.draw(R, { yaw: -0.74 * ke, cam: [-9000 * ke, CAM_H + 250 * ke, -3000 * ke], fade: clamp01((t - ev.pic) / f(128)), time: t });
+      for (const c of ev.cards) {
+        const lt = t - c.fadeIn;
+        if (lt < 0 || t > c.fadeOut + f(64)) continue;
+        let a = clamp01(lt / f(64));
+        if (t > c.fadeOut) a = 1 - clamp01((t - c.fadeOut) / f(64));
+        this.drawText(R, this.textBlocks(c.idx), a, cols, true);
+      }
+    }
+    post.end(t, { exposure: 1.0, bloom: 0.09, grain: 0.025, vignette: 0.3 });
+    return true;
   },
 
   render(R, t) {

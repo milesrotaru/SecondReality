@@ -4,6 +4,7 @@
 import { FPS } from '../demo.js';
 import { VisuScene } from '../gfx/visu.js';
 import { Horizon } from './horizon.js';
+import { Moon } from './moon_remix.js';
 
 export default {
   name: 'U2A',
@@ -28,6 +29,22 @@ export default {
     return this.animEnd;
   },
 
+  // remix: the ship over the moonscape, lit by the same low sun
+  renderRemix(R, t, post) {
+    const gl = R.gl;
+    if (!this.moon) this.moon = Moon.get(R);
+    post.begin({ samples: 4 });
+    this.moon.draw(R, { time: t });
+    const f = (t - this.animStart - this.lag) * FPS;
+    if (f >= 0 && f < this.scene.frameCount) {
+      R.scissorVGA(0, 25, 320, 150);
+      this.scene.draw(f, { prog: this.scene.remixProg, setup: (p) => moonShipLight(p) });
+      gl.disable(gl.SCISSOR_TEST);
+    }
+    post.end(t, { exposure: 1.0, bloom: 0.08, grain: 0.025, vignette: 0.3 });
+    return true;
+  },
+
   render(R, t) {
     const gl = R.gl;
     const T = R.sceneTarget();
@@ -45,3 +62,12 @@ export default {
     R.present(T);
   },
 };
+
+// ship lighting under the moonscape's sun (camera space: y down)
+export function moonShipLight(p, pt = [0, 0, 0], ptC = [0, 0, 0]) {
+  const L = [-0.78, -0.36, 0.55], n = Math.hypot(...L);
+  p.f('uKey', L[0] / n, L[1] / n, L[2] / n).f('uKeyC', 3.2, 3.1, 3.5)
+    .f('uSkyC', 0.03, 0.025, 0.06).f('uGndC', 0.13, 0.13, 0.17)
+    .f('uFogC', 0.03, 0.012, 0.045).f('uFogD', 1 / 2.5e6)
+    .f('uPt', ...pt).f('uPtC', ...ptC).f('uRough', 0.38).f('uMetal', 0.6).f('uLights', 1.4).f('uThrust', 0, 0, 0);
+}

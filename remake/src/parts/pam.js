@@ -7,6 +7,7 @@
 import { FPS } from '../demo.js';
 import { GLSL_BICUBIC } from '../gfx/common.js';
 import { Horizon } from './horizon.js';
+import { Moon } from './moon_remix.js';
 
 const WFADE = [63, 32, 16, 8, 4, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
   1, 2, 4, 6, 9, 14, 20, 28, 37, 46, 56, 63, 63, 63, 63, 63, 63, 63, 63, 63];
@@ -74,6 +75,33 @@ export default {
     this.t0 = P.untilSync(t0, 10);
     // 45 steps of 4 retraces
     return this.t0 + 45 * 4 / FPS + 1 / FPS;
+  },
+
+  // remix: the ship's landing point (U2A's last frame) goes off over the
+  // moonscape: a white-hot core, a flat shock ring rolling out on the flic's
+  // schedule (radius fitted to its apparent width, ~15.5k units per step,
+  // reaching the camera as the screen burns out), and the flash on the ground.
+  renderRemix(R, t, post) {
+    if (!this.moon) this.moon = Moon.get(R);
+    const step = (t - this.t0) * FPS / 4;
+    const E = [-231, 54, 527000];
+    const o = { time: t, exp: E };
+    let white = 0;
+    if (step >= 0) {
+      const si = Math.floor(step), sf = step - si;
+      const w0 = WFADE[Math.min(si, WFADE.length - 1)], w1 = WFADE[Math.min(si + 1, WFADE.length - 1)];
+      white = (w0 + (w1 - w0) * sf) / 64;
+      const s1 = Math.max(0, step - 1);
+      o.flash = step > 0.5 ? 6 * Math.exp(-s1 / 3) + 0.6 : 0;
+      o.ball = step > 1 ? 18000 * Math.min(1, Math.sqrt(s1 / 6)) : 0;
+      o.ballHeat = 4 * Math.exp(-s1 / 5) + 0.5;
+      o.ring = step > 6.3 ? 15500 * (step - 6.3) : 0;
+      o.ringHeat = Math.min(1, (step - 6.3) / 3) * 1.4;
+    }
+    post.begin({ samples: 1 });
+    this.moon.draw(R, o);
+    post.end(t, { exposure: 1.0, bloom: 0.12, grain: 0.025, vignette: 0.3, fade: [1, 1, 1, Math.min(1, white)] });
+    return true;
   },
 
   render(R, t) {

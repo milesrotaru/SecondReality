@@ -43,6 +43,7 @@ uniform vec2 uScreen; // virtual screen size (320,200)
 out vec3 vN;
 out vec3 vFN;
 out vec3 vPos;
+out vec3 vObj;
 flat out float vColor;
 flat out float vFlags;
 flat out float vRank;
@@ -50,6 +51,7 @@ flat out float vFacing;
 void main(){
   vec3 p = uM * aPos + uT;
   vPos = p;
+  vObj = aPos;
   vN = uM * aVN;
   vFN = uM * aFN;
   vColor = aMisc.x; vFlags = aMisc.y; vRank = aMisc.z;
@@ -102,6 +104,83 @@ void main(){
   gl_FragDepth = clamp(d - uBias, 0.0, 1.0);
 }`;
 
+// Remix shading: the palette ramp gives the albedo, lighting is physical-ish
+// (GGX specular, Fresnel, hemisphere ambient, a point light, fog), linear HDR.
+export const REMIX_FS = `#version 300 es
+precision highp float;
+in vec3 vN;
+in vec3 vFN;
+in vec3 vPos;
+in vec3 vObj;
+flat in float vColor;
+flat in float vFlags;
+flat in float vRank;
+flat in float vFacing;
+uniform sampler2D uPal;
+uniform vec2 uNearFar;
+uniform float uBias;
+uniform float uLights;              // hull lights (object-space grid) amount
+uniform vec3 uThrust;               // camera-space direction engines point to (0 = none)
+uniform vec3 uKey, uKeyC;           // towards the key light (camera space, y down), colour
+uniform vec3 uSkyC, uGndC;          // hemisphere ambient / reflections
+uniform vec3 uFogC; uniform float uFogD;
+uniform vec3 uPt, uPtC;             // point light (camera space)
+uniform float uRough, uMetal;
+out vec4 o;
+vec3 pal(float i){ return texelFetch(uPal, ivec2(int(clamp(i, 0.0, 255.0)), 0), 0).rgb; }
+vec3 env(vec3 r){ return mix(uGndC, uSkyC, smoothstep(-0.25, 0.35, -r.y)); }
+void main(){
+  int fl = int(vFlags + 0.5);
+  bool twoSided = (fl & 0x200) != 0;
+  if (!twoSided && vFacing >= 0.0) discard;
+  int shade = (fl >> 10) & 3;
+  bool gouraud = (fl & 0x1000) != 0;
+  float maxl = shade == 1 ? 7.0 : (shade == 2 ? 15.0 : 30.0);
+  vec3 base = shade == 0 ? pal(vColor) : pal(vColor + floor(maxl * 0.62));
+  vec3 alb = pow(base, vec3(2.2));
+  vec3 n = normalize(gouraud ? vN : vFN);
+  if (dot(n, vPos) > 0.0) n = -n;
+  vec3 v = normalize(-vPos);
+  float nv = max(dot(n, v), 1e-3);
+  float a = uRough * uRough;
+  vec3 F0 = mix(vec3(0.04), alb, uMetal);
+  vec3 col = vec3(0.0);
+  for (int k = 0; k < 2; k++) {
+    vec3 L = k == 0 ? uKey : normalize(uPt - vPos);
+    vec3 C = k == 0 ? uKeyC : uPtC * 1e8 / (dot(uPt - vPos, uPt - vPos) + 1e6);
+    float nl = max(dot(n, L), 0.0);
+    if (nl <= 0.0) continue;
+    vec3 h = normalize(L + v);
+    float nh = max(dot(n, h), 0.0);
+    float d = nh * nh * (a * a - 1.0) + 1.0;
+    float D = a * a / (3.14159 * d * d);
+    vec3 F = F0 + (1.0 - F0) * pow(1.0 - max(dot(h, v), 0.0), 5.0);
+    float G = 0.5 / (nl * (nv * (1.0 - a) + a) + nv * (nl * (1.0 - a) + a));
+    col += C * nl * ((1.0 - F) * alb * (1.0 - uMetal) / 3.14159 + D * G * F);
+  }
+  vec3 Fv = F0 + (1.0 - F0) * pow(1.0 - nv, 5.0);
+  col += alb * (1.0 - uMetal) * mix(uGndC, uSkyC, 0.5 - 0.5 * n.y) * 0.5;
+  col += env(reflect(-v, n)) * Fv * (1.0 - a * 0.7);
+  // hull lights: sparse warm dots on a grid in object space, engines glow
+  if (uLights > 0.0) {
+    vec3 q = vObj / 180.0;
+    vec3 c = floor(q), f = fract(q) - 0.5;
+    float h = fract(sin(dot(c, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+    float px = length(fwidth(q)) + 1e-4;
+    float r = 0.1;
+    float dot3 = mix(smoothstep(r + px, r - px, length(f)), 3.14159 * r * r, smoothstep(r * 0.5, r * 2.5, px));
+    col += step(0.92, h) * dot3 * mix(vec3(3.0, 1.9, 1.0), vec3(1.2, 1.8, 3.0), step(0.95, h)) * uLights;
+  }
+  if (dot(uThrust, uThrust) > 0.0) {
+    float e = smoothstep(0.75, 0.95, dot(n, uThrust));
+    col += e * vec3(0.9, 1.6, 4.0) * (0.6 + 0.4 * fract(sin(dot(floor(vObj / 60.0), vec3(1.3, 7.1, 3.7))) * 999.0));
+  }
+  col = mix(col, uFogC, 1.0 - exp(-vPos.z * uFogD));
+  o = vec4(col, 1.0);
+  float dd = log2(max(vPos.z, 1.0) / uNearFar.x) / log2(uNearFar.y / uNearFar.x);
+  gl_FragDepth = clamp(dd - uBias, 0.0, 1.0);
+}`;
+
 export class VisuScene {
   constructor(R, A, key, opts = {}) {
     this.R = R;
@@ -114,6 +193,7 @@ export class VisuScene {
     this.near = opts.near ?? 512;
     this.far = opts.far ?? 9999999;
     this.prog = R.program(VS, FS);
+    this.remixProg = R.program(VS, REMIX_FS);
     // GPU meshes per distinct object file
     this.meshes = {};
     for (const [id, o] of Object.entries(sc.objs)) this.meshes[id] = this.buildMesh(gl, o);
@@ -266,9 +346,10 @@ export class VisuScene {
     const win = opts.window || [0, 25, 319, 174];
     const addx = (win[0] + win[2]) >> 1, addy = (win[1] + win[3]) >> 1;
     const [mulx, muly] = cameraMul(fov, win[2] - addx);
-    const prog = this.prog.use();
+    const prog = (opts.prog || this.prog).use();
     prog.tex('uPal', this.palTex).f('uLight', ...LIGHT).f('uNearFar', this.near, this.far)
       .f('uProj', mulx, muly, addx, addy).f('uScreen', 320, 200).f('uLevelAdd', opts.levelAdd || 0).f('uBias', 0);
+    if (opts.setup) opts.setup(prog);
     gl.enable(gl.DEPTH_TEST);
     gl.depthFunc(gl.LEQUAL);
     const list = [];
