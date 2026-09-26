@@ -4,15 +4,17 @@ import { Assets, inflate } from './assets.js';
 import { Music } from './audio/music.js';
 import { Demo } from './demo.js';
 import { PARTS } from './parts/index.js';
+import { Post } from './gfx/post.js';
 
 const qs = new URLSearchParams(location.search);
-// renderer: 'p3' (640x400 true-colour software renderer, the default) or 'hd'
+// renderer: 'p3' (640x400 true-colour software renderer, the default), 'hd',
+// or 'remix' (new effects on the original choreography; HD where a part has none)
 const MODE = (() => {
   const h = location.hash.slice(1);
   let saved = null;
   try { saved = localStorage.getItem('sr-mode'); } catch (e) { /* storage unavailable */ }
-  const m = qs.get('mode') || (h === 'hd' || h === 'p3' ? h : null) || saved || 'p3';
-  return m === 'hd' ? 'hd' : 'p3';
+  const m = qs.get('mode') || (['hd', 'p3', 'remix'].includes(h) ? h : null) || saved || 'p3';
+  return ['hd', 'remix'].includes(m) ? m : 'p3';
 })();
 
 // Display names for the parts (after the comments in MAIN/U2.ASM)
@@ -42,6 +44,7 @@ class App {
     this.R = new GL(this.canvas);
     // ?mode=p3: render as a 640x400 true-colour software renderer would
     if (MODE === 'p3') this.R.setMachine(640, 400); // exact 2x of the 320x200 art, 4:3 display
+    if (MODE === 'remix') this.post = new Post(this.R);
     this.status = document.getElementById('status');
     this.resize();
     window.addEventListener('resize', () => this.resize());
@@ -120,7 +123,9 @@ class App {
     if (R.machine) gl.clear(gl.COLOR_BUFFER_BIT);
     const part = this.demo.partAt(t);
     const last = this.demo.timeline[this.demo.timeline.length - 1];
-    if (part && (t < this.demo.end || part === last)) part.render(R, t); // the end screen stays up
+    if (part && (t < this.demo.end || part === last)) { // the end screen stays up
+      if (!(this.post && part.renderRemix && part.renderRemix(R, t, this.post))) part.render(R, t);
+    }
     if (R.machine) this.scaleOut();
     this.t = t;
     this.partName = part && part.name;

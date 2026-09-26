@@ -10,6 +10,7 @@
 // slot becomes a stencil-selected colour pass - same maths, antialiased.
 import { FPS } from '../demo.js';
 import { Picture } from '../gfx/picture.js';
+import { REMIX_FS } from './glenz_remix.js';
 
 const trunc = Math.trunc;
 const w16 = (x) => (x << 16) >> 16; // 16-bit int wrap (MSC large model ints)
@@ -267,6 +268,82 @@ export default {
       out.push([160 + x * 256 / z, 130 + y * 213 / z]);
     }
     return out;
+  },
+
+  // ---- remix: the same states, raytraced (see glenz_remix.js) ----
+  // World: camera at the origin looking +z, y down, the original's projection
+  // (x*256/z, y*213/z around 160,130). The board picture spans rows
+  // 130+y/2 .. 130+3y/2, i.e. a floor at height H between depths z0 and 3*z0;
+  // with H = 1500*y/restY the depths stay fixed and the board lowers from eye
+  // level as the original's does.
+  planes(points, M, scale, tr, tintOf, polys, clipY) {
+    const V = points.map((p) => {
+      const x = M[0] * p[0] + M[1] * p[1] + M[2] * p[2];
+      const y = M[3] * p[0] + M[4] * p[1] + M[5] * p[2];
+      const z = M[6] * p[0] + M[7] * p[1] + M[8] * p[2];
+      return [x * scale[0] * 64 / 32768 + tr[0], y * scale[1] * 64 / 32768 + tr[1], z * scale[2] * 64 / 32768 + tr[2]];
+    });
+    const c = [0, 0, 0];
+    for (const v of V) for (let k = 0; k < 3; k++) c[k] += v[k] / V.length;
+    let r = 0;
+    for (const v of V) r = Math.max(r, Math.hypot(v[0] - c[0], v[1] - c[1], v[2] - c[2]));
+    const P = [], T = [];
+    for (const [col, a, b, d] of polys) {
+      const A = V[a], B = V[b], D = V[d];
+      const u = [B[0] - A[0], B[1] - A[1], B[2] - A[2]], w = [D[0] - A[0], D[1] - A[1], D[2] - A[2]];
+      let n = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]];
+      const l = Math.hypot(...n) || 1;
+      n = n.map((x) => x / l);
+      if (n[0] * (A[0] - c[0]) + n[1] * (A[1] - c[1]) + n[2] * (A[2] - c[2]) < 0) n = n.map((x) => -x);
+      P.push(n[0], n[1], n[2], n[0] * A[0] + n[1] * A[1] + n[2] * A[2]);
+      T.push(tintOf(col));
+    }
+    if (clipY !== undefined) { P.push(0, 1, 0, clipY); T.push(0); }
+    return { P: new Float32Array(P), T: new Float32Array(T), n: T.length, sph: [c[0], c[1], c[2], r * 1.02 + 10] };
+  },
+
+  renderRemix(R, t, post) {
+    if (t < this.tBounce) return false;
+    if (!this.rprog) this.rprog = R.fsProgram(REMIX_FS);
+    const pr = this.rprog;
+    let H = 1500, board = 1, wipe = 1e9, red = 0, boardL = 1, fade = 0;
+    let A = null, B = null;
+    if (t < this.t333) {
+      const k = (t - this.tBounce) * FPS, n = this.bounce.length;
+      let y;
+      if (k >= n - 1) y = this.bounce[n - 1];
+      else { const i = Math.floor(k); y = this.bounce[i] + (this.bounce[i + 1] - this.bounce[i]) * (k - i); }
+      H = 1500 * y / this.restY;
+    } else {
+      const s = this.lerpState((t - this.t333) * FPS);
+      const f = (t - this.t333) * FPS;
+      if (s.xscale > 4) {
+        const M = matrixYXZ(s.rx, s.ry, s.rz);
+        A = this.planes(POINTS1, M, [s.xscale, s.yscale, s.zscale], [s.oxp, s.ypos + 1500 + s.oyp, 7500 + s.ozp], (c) => (c & 2 ? 1 : 0), EPOLYS, s.frame < 800 ? 1505 : undefined);
+      }
+      if (s.frame > 800 && s.bscale > 4) {
+        const M = matrixYXZ(3600 - s.rx / 3, 3600 - s.ry / 3, 3600 - s.rz / 3);
+        B = this.planes(POINTSB, M, [s.bscale, s.bscale, s.bscale], [s.oxb, s.ypos + 1500 + s.oyb, 7500 + s.ozb], (c) => (c === 4 ? 1 : 0), EPOLYSB);
+      }
+      // 700..765 the board's palette fades out; 765..790 its rows are cleared
+      // (invisible in the original: the palette is already black), here the
+      // tiles dissolve with glowing edges; from 785 the red scheme.
+      if (f > 700 && f < 790) boardL = Math.max(0, Math.min(1, (764 - f) / 64)) * 0.85 + 0.15;
+      if (f > 765) wipe = 1500 * 213 / Math.max(1, 150 + (f - 765) * 2 + 1 - 130);
+      if (f >= 792) board = 0;
+      red = Math.max(0, Math.min(1, (f - 785) / 8));
+      if (f > 2069) fade = 1 - s.palK / 64;
+    }
+    post.begin({ samples: 1 }); // one ray per pixel; MSAA would not help
+    const z4 = new Float32Array(4);
+    pr.use()
+      .fv('uPA', A ? A.P : new Float32Array(100), 4).fv('uTA', A ? A.T : new Float32Array(25), 1).i('uNA', A ? A.n : 0)
+      .fv('uPB', B ? B.P : new Float32Array(96), 4).fv('uTB', B ? B.T : new Float32Array(24), 1).i('uNB', B ? B.n : 0)
+      .f('uSphA', ...(A ? A.sph : z4)).f('uSphB', ...(B ? B.sph : z4))
+      .f('uH', H).f('uBoard', board).f('uWipeZ', wipe).f('uRed', red).f('uBoardL', boardL).f('uTime', t);
+    R.drawFullscreen();
+    post.end(t, { exposure: 1.0, bloom: 0.08, fade: [0, 0, 0, fade] });
+    return true;
   },
 
   render(R, t) {

@@ -9,8 +9,8 @@ clock follows the audio, so parts start on the same rows they did in 1993.
 `dist/index.html` is the whole thing in one file (about 2 MB). Open it in a
 current desktop browser and click *Start the demo*.
 
-Two renderers, chosen on the start screen (or `?mode=p3` / `?mode=hd`,
-`#p3` / `#hd`):
+Three renderers, chosen on the start screen (or `?mode=p3` / `?mode=hd` /
+`?mode=remix`, `#p3` / `#hd` / `#remix`):
 
 - **Pentium III** (default): the demo as a meticulous software renderer on a
   733 MHz Pentium III would draw it. A 640x400 true-colour frame (an exact 2x
@@ -20,6 +20,13 @@ Two renderers, chosen on the start screen (or `?mode=p3` / `?mode=hd`,
   anti-aliasing. The frame is scaled to the screen with crisp pixels.
 - **Native HD**: every effect evaluated at the display's full resolution, with
   bicubic resampling and multisampled edges.
+- **Remix** (in progress): the choreography is fixed - music, cuts, syncs,
+  simulations, paths - and each part is redrawn with new effects in linear
+  HDR (bloom, ACES tonemapping, grain). Parts not remixed yet play in HD.
+  So far: *Glenz* (both polyhedra raytraced exactly as convex glass with
+  dispersion, a reflective board with coloured shadows, the board's hidden
+  wipe shown as dissolving tiles) and *Vector balls* (impostor spheres with
+  floor reflections and soft height-dependent shadows).
 
 Controls: `←` / `→` previous / next part, `Space` pause, `F` fullscreen,
 `M` mute. URL options: `?part=Glenz`, `?t=300` (seconds), `?mute=1`,

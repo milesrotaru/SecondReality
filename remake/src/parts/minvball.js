@@ -7,6 +7,7 @@
 // screen positions are projected without truncation and interpolated
 // between simulation frames, balls are drawn as shaded, antialiased spheres.
 import { FPS } from '../demo.js';
+import * as RX from './minvball_remix.js';
 
 const VS = `#version 300 es
 layout(location=0) in vec2 aCorner;
@@ -182,6 +183,89 @@ export default {
   color(idx, fade) {
     const p = this.pal;
     return [0, 1, 2].map((k) => fade(p[idx * 3 + k], k) / 63);
+  },
+
+  // ---- remix (see minvball_remix.js) ----
+  initRemix(R) {
+    const gl = R.gl;
+    this.rx = {
+      ball: R.program(RX.BALL_VS, RX.BALL_FS),
+      shadow: R.program(RX.SHADOW_VS, RX.SHADOW_FS),
+      floor: R.fsProgram(RX.FLOOR_FS),
+      vao: gl.createVertexArray(), inst: gl.createBuffer(),
+      buf: new Float32Array(N * 4),
+    };
+    const X = this.rx;
+    gl.bindVertexArray(X.vao);
+    const q = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, q);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, 1, 1, -1, -1, 1, 1, -1, 1]), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, X.inst);
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 16, 0); gl.vertexAttribDivisor(1, 1);
+    gl.disableVertexAttribArray(2);
+    gl.bindVertexArray(null);
+  },
+
+  renderRemix(R, t, post) {
+    const gl = R.gl;
+    if (!this.rx) this.initRemix(R);
+    const X = this.rx;
+    const F = (x) => x * FPS;
+    const sub = Math.max(0, 64 - F(t - this.t0) / 2);
+    const fr = F(t - this.tMain);
+    // camera-space balls, interpolated like the HD path
+    let n = 0, rs = 0, rc = 1;
+    if (fr >= 1) {
+      const k = Math.floor(fr);
+      this.simTo(k + 1);
+      const S = this.S, P0 = this.prev, u = fr - k;
+      const ang = (sn, cs) => Math.atan2(sn, cs);
+      const a0 = ang(P0.rotsin, P0.rotcos), a1 = ang(S.rotsin, S.rotcos);
+      let da = a1 - a0; da -= Math.round(da / (2 * Math.PI)) * 2 * Math.PI;
+      rs = Math.sin(a0 + da * u); rc = Math.cos(a0 + da * u);
+      const balls = [], seen = new Set();
+      for (let i = 0; i < N; i++) {
+        // unspawned balls fall as one stack: draw (and shadow) it once
+        const key = S.x[i] + ',' + S.y[i] + ',' + S.z[i] + ',' + P0.y[i];
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const a = this.project(P0.x[i], P0.y[i], P0.z[i], P0.rotsin, P0.rotcos);
+        const b = this.project(S.x[i], S.y[i], S.z[i], S.rotsin, S.rotcos);
+        const p = i === S.spawned ? b : a.map((v, j) => v + (b[j] - v) * u);
+        const bp = p[3];
+        if (bp < 200 || p[1] < -400) continue; // not yet dropped: parked far above
+        balls.push([(p[0] - 160) * bp / 288, (p[1] - 100) * bp / 257, bp]);
+      }
+      balls.sort((A, B) => B[2] - A[2]);
+      for (const [x, y, z] of balls) { X.buf.set([x, y, z, RX.BALL_R], n * 4); n++; }
+    }
+    post.begin({ samples: 4 });
+    gl.bindVertexArray(X.vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, X.inst);
+    gl.bufferData(gl.ARRAY_BUFFER, X.buf.subarray(0, n * 4), gl.STREAM_DRAW);
+    gl.enable(gl.BLEND);
+    // 1. mirrored balls  2. floor over them  3. shadows  4. balls
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.vertexAttrib1f(2, 1);
+    if (n) { X.ball.use().f('uFloor', RX.FLOOR_Y).f('uRot', rs, rc).f('uMirror', 1); gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, n); }
+    X.floor.use().f('uFloor', RX.FLOOR_Y).f('uRot', rs, rc);
+    R.drawFullscreen();
+    gl.bindVertexArray(X.vao);
+    if (n) {
+      gl.blendFunc(gl.ZERO, gl.SRC_COLOR);
+      X.shadow.use().f('uFloor', RX.FLOOR_Y);
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, n);
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      gl.vertexAttrib1f(2, 0);
+      X.ball.use().f('uFloor', RX.FLOOR_Y).f('uRot', rs, rc).f('uMirror', 0);
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, n);
+    }
+    gl.disable(gl.BLEND);
+    gl.bindVertexArray(null);
+    post.end(t, { exposure: 1.0, bloom: 0.07, fade: [0, 0, 0, sub / 64] });
+    return true;
   },
 
   render(R, t) {
