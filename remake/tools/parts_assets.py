@@ -320,3 +320,13 @@ def rayscrl(pk):
 
 
 ALL += [rayscrl]
+
+
+def coman(pk):
+    """3DSINFLD (Psi): the two 32768-entry height waves of the voxel
+    landscape (W1DTA.BIN, W2DTA.BIN; terrain = w1[x] + w2[y])."""
+    pk.add('coman.w1', fc.read('COMAN', 'W1DTA.BIN'), type='i16')
+    pk.add('coman.w2', fc.read('COMAN', 'W2DTA.BIN'), type='i16')
+
+
+ALL += [coman]

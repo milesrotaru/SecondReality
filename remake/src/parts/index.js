@@ -12,6 +12,7 @@ import lens from './lens.js';
 import plz from './plz.js';
 import minvball from './minvball.js';
 import rayscrl from './rayscrl.js';
+import sinfld from './sinfld.js';
 
 export const PARTS = [
   { music: [0, 0] },
@@ -30,4 +31,5 @@ export const PARTS = [
   plz,
   minvball,
   rayscrl,
+  sinfld,
 ];
