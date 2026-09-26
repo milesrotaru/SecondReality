@@ -70,5 +70,5 @@ export function moonShipLight(p, pt = [0, 0, 0], ptC = [0, 0, 0]) {
     .f('uSkyC', 0.03, 0.025, 0.06).f('uGndC', 0.13, 0.13, 0.17)
     .f('uFogC', 0.03, 0.012, 0.045).f('uFogD', 1 / 2.5e6)
     .f('uPt', ...pt).f('uPtC', ...ptC).f('uRough', 0.38).f('uMetal', 0.6).f('uLights', 1.4).f('uThrust', 0, 0, 0)
-    .m3('uCamInv', new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1])).f('uCamW', 0, 0, 0).f('uShadowOn', 0).f('uUp', 0, -1, 0);
+    .m3('uCamInv', new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1])).f('uCamW', 0, 0, 0).f('uShadowOn', 0).f('uUp', 0, -1, 0).f('uCity', 0);
 }

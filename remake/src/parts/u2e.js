@@ -132,7 +132,7 @@ export default {
     const cam = sc.cameraAt(f);
     const C = cam.C;
     // the sun: low in the west, warm
-    const sun = (() => { const v = [-0.5, 0.38, 0.85]; const n = Math.hypot(...v); return v.map((x) => x / n); })();
+    const sun = (() => { const v = [-0.55, 0.42, 0.62]; const n = Math.hypot(...v); return v.map((x) => x / n); })();
     // shadow map around where the camera looks
     if (!this.shadowT) this.shadowT = R.target(3072, 3072, { internal: gl.R32F, format: gl.RED, type: gl.FLOAT, filter: gl.NEAREST, depth: true });
     const fwd = [C[6], C[7], C[8]]; // camera z axis in world = third row of C
@@ -168,11 +168,11 @@ export default {
     sc.draw(f, {
       prog: sc.remixProg, groundFirst: true, onTop: (name, fr) => name.startsWith('s01') && fr > 900 && fr < 1100,
       setup: (p) => {
-        p.f('uKey', ...keyCam).f('uKeyC', 2.9, 2.3, 1.75)
-          .f('uSkyC', 0.2, 0.24, 0.36).f('uGndC', 0.22, 0.17, 0.12)
-          .f('uFogC', 0.55, 0.38, 0.3).f('uFogD', 1 / 90000)
-          .f('uPt', 0, 0, 0).f('uPtC', 0, 0, 0).f('uRough', 0.55).f('uMetal', 0.05).f('uLights', 0).f('uThrust', 0, 0, 0)
-          .m3('uCamInv', CT).f('uCamW', ...cam.W).m4('uL', L).tex('uShadow', this.shadowT.color).f('uShadowOn', 1).f('uUp', 0, 0, 1);
+        p.f('uKey', ...keyCam).f('uKeyC', 3.4, 2.4, 1.5)
+          .f('uSkyC', 0.1, 0.15, 0.3).f('uGndC', 0.12, 0.09, 0.07)
+          .f('uFogC', 0.5, 0.33, 0.26).f('uFogD', 1 / 140000)
+          .f('uPt', 0, 0, 0).f('uPtC', 0, 0, 0).f('uRough', 0.62).f('uMetal', 0.02).f('uLights', 0).f('uThrust', 0, 0, 0)
+          .m3('uCamInv', CT).f('uCamW', ...cam.W).m4('uL', L).tex('uShadow', this.shadowT.color).f('uShadowOn', 1).f('uUp', 0, 0, 1).f('uCity', 1);
       },
     });
     gl.disable(gl.SCISSOR_TEST);

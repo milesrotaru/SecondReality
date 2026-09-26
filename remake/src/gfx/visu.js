@@ -132,6 +132,7 @@ uniform mat4 uL;                    // world -> light clip
 uniform sampler2D uShadow;
 uniform float uShadowOn;
 uniform vec3 uUp;                   // world up (in the uCamInv frame)
+uniform float uCity;                // facade detail (windows, roofs, ground contact)
 out vec4 o;
 float shadowAt(vec3 cpos, vec3 n){
   if (uShadowOn < 0.5) return 1.0;
@@ -159,6 +160,27 @@ void main(){
   vec3 alb = pow(base, vec3(2.2));
   vec3 n = normalize(gouraud ? vN : vFN);
   if (dot(n, vPos) > 0.0) n = -n;
+  // city: facades get window grids, roofs gravel, walls darken at the ground
+  float glassK = 0.0, winLit = 0.0, contact = 1.0;
+  if (uCity > 0.5) {
+    vec3 w = uCamInv * vPos + uCamW, nw = uCamInv * n;
+    if (abs(nw.z) < 0.35 && w.z > 150.0) {
+      vec2 t2 = normalize(vec2(-nw.y, nw.x));
+      float u = dot(w.xy, t2);
+      vec2 cell = vec2(u / 520.0, w.z / 640.0);
+      vec2 f = fract(cell);
+      vec2 aa = fwidth(cell) * 1.5 + 1e-4;
+      float win = smoothstep(0.18 - aa.x, 0.18 + aa.x, f.x) * smoothstep(0.82 + aa.x, 0.82 - aa.x, f.x)
+                * smoothstep(0.25 - aa.y, 0.25 + aa.y, f.y) * smoothstep(0.8 + aa.y, 0.8 - aa.y, f.y);
+      // windows fade out where they would alias
+      win *= 1.0 - smoothstep(0.25, 0.5, max(aa.x, aa.y));
+      glassK = win;
+      float h = fract(sin(dot(floor(cell), vec2(12.9898, 78.233)) + floor(w.x / 3000.0) * 7.0) * 43758.5453);
+      winLit = win * step(0.72, h);
+      contact = mix(0.45, 1.0, smoothstep(0.0, 1400.0, w.z));
+    }
+    if (nw.z > 0.7 && w.z > 150.0) contact = 0.85 + 0.15 * fract(sin(dot(floor(w.xy / 90.0), vec2(1.7, 9.2))) * 999.0);
+  }
   vec3 v = normalize(-vPos);
   float nv = max(dot(n, v), 1e-3);
   float a = uRough * uRough;
@@ -178,7 +200,14 @@ void main(){
     float G = 0.5 / (nl * (nv * (1.0 - a) + a) + nv * (nl * (1.0 - a) + a));
     col += C * nl * ((1.0 - F) * alb * (1.0 - uMetal) / 3.14159 + D * G * F);
   }
+  col *= contact;
   vec3 Fv = F0 + (1.0 - F0) * pow(1.0 - nv, 5.0);
+  if (glassK > 0.0) {
+    // dark glass reflecting the sky, some windows lit warm
+    vec3 g = env(reflect(-v, n)) * (0.08 + 0.92 * pow(1.0 - nv, 5.0)) * 1.2 + vec3(0.01, 0.012, 0.02);
+    g += vec3(1.6, 0.95, 0.45) * winLit * 0.9;
+    col = mix(col, g, glassK * 0.85);
+  }
   col += alb * (1.0 - uMetal) * mix(uGndC, uSkyC, 0.5 + 0.5 * dot(uCamInv * n, uUp)) * 0.5;
   col += env(reflect(-v, n)) * Fv * (1.0 - a * 0.7);
   // hull lights: sparse warm dots on a grid in object space, engines glow
