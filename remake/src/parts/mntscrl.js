@@ -8,6 +8,7 @@
 import { FPS } from '../demo.js';
 import { GLSL_BICUBIC } from '../gfx/common.js';
 import { palToRGBA } from '../gfx/gl.js';
+import * as MX from './mntscrl_remix.js';
 
 const FS = `#version 300 es
 precision highp float;
@@ -96,6 +97,101 @@ export default {
     this.tB = P.until(this.tWait, (p) => p.musplus >= 18);
     this.tF = P.until(this.tB + F(127), (p) => p.musplus === -14);
     return this.tF + F(65);
+  },
+
+  // ---------------- remix (mntscrl_remix.js) ----------------
+  initRemix(R) {
+    const gl = R.gl;
+    const oak = MX.buildOak();
+    const quad = new Float32Array([0, -1, 1, -1, 1, 1, 0, -1, 1, 1, 0, 1]);
+    const mk = (data, layout, stride) => {
+      const vao = gl.createVertexArray();
+      gl.bindVertexArray(vao);
+      const q = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, q);
+      gl.bufferData(gl.ARRAY_BUFFER, quad, gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+      const b = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, b);
+      gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+      let off = 0;
+      layout.forEach((n, i) => { gl.enableVertexAttribArray(i + 1); gl.vertexAttribPointer(i + 1, n, gl.FLOAT, false, stride * 4, off * 4); gl.vertexAttribDivisor(i + 1, 1); off += n; });
+      gl.bindVertexArray(null);
+      return { vao, count: data.length / stride };
+    };
+    const X = this.rx = {
+      hill: R.fsProgram(MX.HILL_FS),
+      leafP: R.program(MX.LEAF_VS, MX.LEAF_FS),
+      branchP: R.program(MX.BRANCH_VS, MX.BRANCH_FS),
+      leaves: mk(oak.leaves, [3, 3, 4], 10),
+      branches: mk(oak.branches, [4, 4], 8),
+      noise: MX.getNoiseTex(R),
+    };
+    // light-space basis and bounds
+    const L = MX.LIGHT, lz = L.map((v) => -v);
+    const up = [0, -1, 0];
+    const cr = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    const nz = (a) => { const l = Math.hypot(...a); return a.map((v) => v / l); };
+    const lx = nz(cr(up, lz)), ly = cr(lz, lx);
+    const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    const pts = [];
+    for (let u = -20; u <= 260; u += 20) for (let v = -10; v <= 45; v += 5) pts.push([0, 1, 2].map((k) => MX.T[k] + u * MX.R1[k] + v * MX.R2[k]));
+    for (let i = 0; i < oak.branches.length; i += 4) pts.push([oak.branches[i], oak.branches[i + 1], oak.branches[i + 2]]);
+    const mn = [1e9, 1e9, 1e9], mx = [-1e9, -1e9, -1e9];
+    for (const p of pts) { const q = [dot(lx, p), dot(ly, p), dot(lz, p)]; for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], q[k]); mx[k] = Math.max(mx[k], q[k]); } }
+    for (let k = 0; k < 3; k++) { const pad = (mx[k] - mn[k]) * 0.03 + 1; mn[k] -= pad; mx[k] += pad; }
+    X.LB = new Float32Array([lx[0], ly[0], lz[0], lx[1], ly[1], lz[1], lx[2], ly[2], lz[2]]);
+    X.LR = [mn[0], mn[1], 1 / (mx[0] - mn[0]), 1 / (mx[1] - mn[1])];
+    X.LZ = [mn[2], 1 / (mx[2] - mn[2])];
+    X.shadow = R.target(2048, 2048, { internal: gl.R32F, format: gl.RED, type: gl.FLOAT, filter: gl.NEAREST, depth: true });
+  },
+
+  drawOak(R, t, shadowPass, lit) {
+    const gl = R.gl, X = this.rx;
+    const set = (p) => p.use().f('uTime', t).i('uShadowPass', shadowPass ? 1 : 0).f('uLit', lit)
+      .m3('uLB', X.LB).f('uLR', ...X.LR).f('uLZ', ...X.LZ).tex('uShadow', X.shadow.color).tex('uNoise', X.noise);
+    set(X.branchP);
+    gl.bindVertexArray(X.branches.vao);
+    gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, X.branches.count);
+    set(X.leafP);
+    gl.bindVertexArray(X.leaves.vao);
+    gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, X.leaves.count);
+    gl.bindVertexArray(null);
+  },
+
+  renderRemix(R, t, post) {
+    const gl = R.gl;
+    if (!this.rx) this.initRemix(R);
+    const X = this.rx;
+    const F = (x) => x * FPS;
+    let other = 63, hill = 63, out = 0, text = 0, m = 0;
+    if (t < this.tWait) { other = Math.max(0, F(t - this.t0)); hill = 0; }
+    else if (t < this.tB) hill = 0;
+    else {
+      m = F(t - this.tB); text = 1;
+      hill = Math.min(63, Math.max(0, (m - 1) / 2));
+      if (t >= this.tF) out = Math.min(64, F(t - this.tF));
+    }
+    // shadow map (the boughs sway, so every frame)
+    R.bindTarget(X.shadow);
+    gl.clearColor(1, 1, 1, 1); gl.clearDepth(1);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LESS);
+    this.drawOak(R, t, true, 1);
+    gl.disable(gl.DEPTH_TEST);
+    gl.clearColor(0, 0, 0, 1);
+    post.begin({ samples: 4 });
+    X.hill.use().tex('uFont', this.fontTex).tex('uCov', this.covTex).tex('uShadow', X.shadow.color).tex('uNoise', X.noise)
+      .m3('uLB', X.LB).f('uLR', ...X.LR).f('uLZ', ...X.LZ)
+      .f('uScroll', m / 3 - 104).f('uText', text).f('uHill', Math.pow(hill / 63, 1.6)).f('uSky', other / 63).f('uTime', t);
+    R.drawFullscreen();
+    gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LESS);
+    gl.enable(gl.SAMPLE_ALPHA_TO_COVERAGE);
+    this.drawOak(R, t, false, Math.pow(other / 63, 1.6));
+    gl.disable(gl.SAMPLE_ALPHA_TO_COVERAGE);
+    gl.disable(gl.DEPTH_TEST);
+    post.end(t, { exposure: 1.0, bloom: 0.08, grain: 0.025, vignette: 0.3, fade: [0, 0, 0, out / 64] });
+    return true;
   },
 
   render(R, t) {
