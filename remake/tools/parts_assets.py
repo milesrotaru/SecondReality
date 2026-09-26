@@ -225,3 +225,27 @@ def mntscrl(pk):
 
 
 ALL += [mntscrl]
+
+
+def lens(pk):
+    """LNS&ZOOM (Psi): the face picture (LENS.EXB, linked PIC with the
+    palette at +16 and pixels at 784), the lens region mask (LENS.U, top-left
+    152x116: 1 glass, 2 highlight arc, 3 bright spot, 4 restore rim) and the
+    precomputed paths (LENS.EXP: 715 lens positions, then 2000 rotozoom
+    (x, y, xa, ya) frames)."""
+    b = fc.read('LENS', 'LENS.EXB')
+    pk.pic('lens.back', 320, 200, b[784:784 + 64000], b[16:16 + 768])
+    u = fc.read('LENS', 'LENS.U')
+    ex0 = fc.read('LENS', 'LENS.EX0')
+    w, h = struct.unpack('<hh', ex0[:4])
+    m = bytearray()
+    for y in range(h):
+        m += u[y * 320:y * 320 + w]
+    pk.add('lens.mask', bytes(m), w=w, h=h, tints=list(ex0[4:13]))
+    p = fc.read('LENS', 'LENS.EXP')
+    n1 = struct.unpack('<h', p[2:4])[0]
+    pk.add('lens.path1', p[4:4 + n1 * 2], type='i16')
+    pk.add('lens.path2', p[4 + n1 * 2:], type='i16')
+
+
+ALL += [lens]

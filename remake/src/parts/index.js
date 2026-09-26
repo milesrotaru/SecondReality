@@ -8,6 +8,7 @@ import tunneli from './tunneli.js';
 import techno from './techno.js';
 import panic from './panic.js';
 import mntscrl from './mntscrl.js';
+import lens from './lens.js';
 
 export const PARTS = [
   { music: [0, 0] },
@@ -22,4 +23,5 @@ export const PARTS = [
   panic,
   { waitPlus: true },
   mntscrl,
+  lens,
 ];

@@ -89,8 +89,12 @@ export default {
     const F = (n) => n / FPS;
     this.t0 = t0 + F(1);
     this.tWait = this.t0 + F(64);
-    this.tB = P.until(this.tWait, (p) => p.musplus >= 0);
-    this.tF = P.until(this.tB + F(127), (p) => p.musplus === -11);
+    // READ2.PAS waits for musplus >= 0 and fades out at musplus == -11; the
+    // shipped MNTSCRL.EXE (PKLITE-packed, not the released source) starts the
+    // hills on row 18 and the fade on row 50 (-14), measured frame-exactly
+    // against a DOSBox capture aligned by the soundtrack.
+    this.tB = P.until(this.tWait, (p) => p.musplus >= 18);
+    this.tF = P.until(this.tB + F(127), (p) => p.musplus === -14);
     return this.tF + F(65);
   },
 

@@ -29,6 +29,31 @@ vec4 texBicubic(sampler2D tex, vec2 uv) {
   r += texture(tex, vec2(texPos3.x, texPos3.y)) * w3.x * w3.y;
   return r;
 }
+// Same, with explicit derivatives (for coordinates that wrap discontinuously)
+vec4 texBicubicGrad(sampler2D tex, vec2 uv, vec2 gx, vec2 gy) {
+  vec2 texSize = vec2(textureSize(tex, 0));
+  vec2 samplePos = uv * texSize;
+  vec2 texPos1 = floor(samplePos - 0.5) + 0.5;
+  vec2 f = samplePos - texPos1;
+  vec2 w0 = f * (-0.5 + f * (1.0 - 0.5 * f));
+  vec2 w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
+  vec2 w2 = f * (0.5 + f * (2.0 - 1.5 * f));
+  vec2 w3 = f * f * (-0.5 + 0.5 * f);
+  vec2 w12 = w1 + w2;
+  vec2 offset12 = w2 / w12;
+  vec2 t0 = (texPos1 - 1.0) / texSize, t3 = (texPos1 + 2.0) / texSize, t12 = (texPos1 + offset12) / texSize;
+  vec4 r = vec4(0.0);
+  r += textureGrad(tex, vec2(t0.x, t0.y), gx, gy) * w0.x * w0.y;
+  r += textureGrad(tex, vec2(t12.x, t0.y), gx, gy) * w12.x * w0.y;
+  r += textureGrad(tex, vec2(t3.x, t0.y), gx, gy) * w3.x * w0.y;
+  r += textureGrad(tex, vec2(t0.x, t12.y), gx, gy) * w0.x * w12.y;
+  r += textureGrad(tex, vec2(t12.x, t12.y), gx, gy) * w12.x * w12.y;
+  r += textureGrad(tex, vec2(t3.x, t12.y), gx, gy) * w3.x * w12.y;
+  r += textureGrad(tex, vec2(t0.x, t3.y), gx, gy) * w0.x * w3.y;
+  r += textureGrad(tex, vec2(t12.x, t3.y), gx, gy) * w12.x * w3.y;
+  r += textureGrad(tex, vec2(t3.x, t3.y), gx, gy) * w3.x * w3.y;
+  return r;
+}
 // "Sharp bilinear": crisp pixel edges without shimmer when scaled by
 // non-integer factors. Used where the pixel look is the point.
 vec4 texSharp(sampler2D tex, vec2 uv, float sharp) {
