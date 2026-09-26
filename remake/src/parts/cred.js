@@ -10,6 +10,7 @@
 // row), everything is resampled smoothly with sub-frame motion.
 import { FPS } from '../demo.js';
 import { GLSL_BICUBIC } from '../gfx/common.js';
+import { Post } from '../gfx/post.js';
 
 const SCREENS = [
   ['GRAPHICS - MARVEL', 'MUSIC - SKAVEN', 'CODE - WILDFIRE'],
@@ -34,6 +35,12 @@ const SCREENS = [
   ['GRAPHICS - PIXEL', 'MUSIC - SKAVEN'],
   ['GRAPHICS - PIXEL', 'MUSIC - SKAVEN', 'CODE - WILDFIRE'],
 ];
+// remix: the part pictures become live renders of the remixed parts at
+// these demo times (the last screen shows the credits themselves: kept)
+const SHOTS = [
+  (d) => { const a = d.timeline.find((p) => p.name === 'Alku'); const c = a.ev.cards[2]; return c ? c.fadeIn + 1.2 : 60; },
+  97.5, 104.93, 108.8, 132, 161, 183, 205, 225, 250, 276, 305, 315, 352, 392, 430, 460, 480, 495, 543,
+];
 const FONAORDER = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/?!:,."()+-';
 const CYCLE = 364; // frames per screen, measured on the capture
 
@@ -43,6 +50,7 @@ in vec2 vUv;
 out vec4 o;
 uniform sampler2D uPic, uText;
 uniform float uYY, uSplit;   // horizontal scroll (px), split row (display rows)
+uniform float uFlip;        // live renders are stored bottom-up
 ${GLSL_BICUBIC}
 void main(){
   vec2 p = vec2(vUv.x, 1.0 - vUv.y) * vec2(320.0, 200.0);
@@ -53,7 +61,9 @@ void main(){
   vec2 q = vec2(p.x + uYY - 400.0, p.y);
   if (q.x > -1.0 && q.x < 161.0 && q.y < 101.0) {
     float cov = smoothstep(-fw, fw, q.x) * (1.0 - smoothstep(160.0 - fw, 160.0 + fw, q.x)) * (1.0 - smoothstep(100.0 - fh, 100.0 + fh, q.y));
-    c = clamp(texBicubic(uPic, q / vec2(160.0, 100.0)).rgb, 0.0, 1.0) * cov;
+    vec2 tq = q / vec2(160.0, 100.0);
+    if (uFlip > 0.5) tq.y = 1.0 - tq.y;
+    c = clamp(texBicubic(uPic, tq).rgb, 0.0, 1.0) * cov;
   }
   // bottom: memory from line 0, the text (putpixel rows at half height)
   float ty = (p.y - uSplit) * 2.0;
@@ -125,7 +135,40 @@ export default {
     return t0 + (SCREENS.length * CYCLE - 8) / FPS;
   },
 
-  render(R, t) {
+  // render (once) the remixed part shown on screen s into a 4:3 texture
+  livePic(R, s, post) {
+    if (!this.live) this.live = [];
+    if (this.live[s]) return this.live[s];
+    const gl = R.gl;
+    let t = SHOTS[s];
+    if (typeof t === 'function') t = t(this.demo);
+    const part = this.demo.partAt(t);
+    const W = 960, H = 720;
+    const tgt = R.target(W, H, { filter: gl.LINEAR });
+    if (!this.picPost) this.picPost = new Post(R);
+    const saved = { screen: R.screen, viewport: R.viewport, vx: R.vx, vy: R.vy, vw: R.vw, vh: R.vh };
+    Object.assign(R, { screen: tgt, viewport: { x: 0, y: 0, w: W, h: H }, vx: 0, vy: 0, vw: W, vh: H });
+    R.bindTarget(null);
+    gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+    if (!(part.renderRemix && part.renderRemix(R, t, this.picPost))) part.render(R, t);
+    Object.assign(R, saved);
+    R.bindTarget(null);
+    gl.disable(gl.BLEND); gl.disable(gl.DEPTH_TEST); gl.disable(gl.SCISSOR_TEST);
+    this.live[s] = tgt.color;
+    return tgt.color;
+  },
+
+  renderRemix(R, t, post) {
+    if (!this.demo) return false;
+    const fr = (t - this.t0) * FPS;
+    const s = Math.max(0, Math.min(SCREENS.length - 1, Math.floor(fr / CYCLE)));
+    if (s < SHOTS.length) this.livePic(R, s, post);
+    // draw directly (display-referred, like the original screen)
+    this.render(R, t, s < SHOTS.length ? this.live[s] : null);
+    return true;
+  },
+
+  render(R, t, live = null) {
     const F = (x) => x * FPS;
     const fr = F(t - this.t0);
     const s = Math.max(0, Math.min(SCREENS.length - 1, Math.floor(fr / CYCLE)));
@@ -143,7 +186,7 @@ export default {
       const y = curve(this.yout, k - nIn - hold);
       yy = 320 + y / 80; split = (y / 128 + 200) / 2;
     }
-    this.prog.use().tex('uPic', this.pics[s]).tex('uText', this.texts[s]).f('uYY', yy).f('uSplit', split);
+    this.prog.use().f('uFlip', live ? 1 : 0).tex('uPic', live || this.pics[s]).tex('uText', this.texts[s]).f('uYY', yy).f('uSplit', split);
     R.drawFullscreen();
   },
 };

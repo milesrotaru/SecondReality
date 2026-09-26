@@ -76,6 +76,7 @@ class App {
     for (const p of PARTS) if (p.init) p.init(this.R, this.assets);
     this.demo = new Demo(this.music, PARTS);
     this.demo.build();
+    for (const p of PARTS) p.demo = this.demo; // parts that show other parts (CRED)
     this.setStatus('');
     window.SR = this; // debugging / automated capture hooks
   }
