@@ -3,6 +3,7 @@
 import { FPS } from '../demo.js';
 import { Picture } from '../gfx/picture.js';
 import { clamp01 } from '../gfx/common.js';
+import { TitleScene } from './title_remix.js';
 
 export default {
   name: 'Title',
@@ -10,11 +11,22 @@ export default {
 
   init(R, A) {
     this.pic = new Picture(R, A.pic('beg.title'));
+    this.A = A;
   },
 
   plan(P, t0) {
     this.t0 = t0;
     return t0 + (32 + 129) / FPS;
+  },
+
+  // remix: the ice sculpture (title_remix.js) with the same white fade
+  renderRemix(R, t, post) {
+    if (!this.scene) this.scene = TitleScene.get(R, this.A);
+    const k = (t - this.t0) * FPS - 32;
+    post.begin({ samples: 1 });
+    if (k >= 0) this.scene.draw(R, { time: t });
+    post.end(t, { exposure: 1.0, bloom: 0.05, grain: 0.015, vignette: 0.12, fade: [1, 1, 1, 1 - clamp01(k / 128)] });
+    return true;
   },
 
   render(R, t) {

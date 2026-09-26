@@ -11,6 +11,7 @@
 import { FPS } from '../demo.js';
 import { Picture } from '../gfx/picture.js';
 import { REMIX_FS } from './glenz_remix.js';
+import { TitleScene } from './title_remix.js';
 
 const trunc = Math.trunc;
 const w16 = (x) => (x << 16) >> 16; // 16-bit int wrap (MSC large model ints)
@@ -97,6 +98,7 @@ export default {
     const gl = R.gl;
     this.R = R;
     this.title = new Picture(R, A.pic('beg.title'));
+    this.A = A;
     const fc = A.pic('glenz.fc');
     this.fc = fc;
     this.board = new Picture(R, fc);
@@ -302,8 +304,27 @@ export default {
     return { P: new Float32Array(P), T: new Float32Array(T), n: T.length, sph: [c[0], c[1], c[2], r * 1.02 + 10] };
   },
 
+  // the title card tilting away: the original's curtains close as a
+  // rotation about row 267, top edge at zy: cos(a) = 1 - zy/267
+  renderRemixTitle(R, t, post) {
+    if (!this.titleScene) this.titleScene = TitleScene.get(R, this.A);
+    const k = (t - this.ts) * FPS - 1;
+    let tilt = 0, c = 0;
+    if (k >= 0) {
+      const i = Math.min(this.zoom.length - 1, Math.floor(k)), fr = k - i;
+      const A = this.zoom[i], B = this.zoom[Math.min(this.zoom.length - 1, i + 1)];
+      const zy = A.zy + (B.zy - A.zy) * fr;
+      tilt = Math.acos(Math.max(0, 1 - zy / 267));
+      c = Math.min(32, k) / 32;
+    }
+    post.begin({ samples: 1 });
+    if (t < this.tZoomEnd) this.titleScene.draw(R, { tilt, card: 1 - c * (1 - 0.23), key: 1 - 0.35 * c, time: t });
+    post.end(t, { exposure: 1.0, bloom: 0.05, grain: 0.015, vignette: 0.12 });
+    return true;
+  },
+
   renderRemix(R, t, post) {
-    if (t < this.tBounce) return false;
+    if (t < this.tBounce) return this.renderRemixTitle(R, t, post);
     if (!this.rprog) this.rprog = R.fsProgram(REMIX_FS);
     const pr = this.rprog;
     let H = 1500, board = 1, wipe = 1e9, red = 0, boardL = 1, fade = 0;
