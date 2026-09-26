@@ -98,6 +98,92 @@ void main(){
   o = vec4(pal(T + 140.0 - j / 8.0), 1.0);
 }`;
 
+// ---- remix: the same terrain (w1[x] + w2[y], the view-space ripple, the
+// skewed camera path and row slopes) raymarched per pixel and lit: glossy
+// blue hills with sky reflections, height-coloured from the original
+// palette, fading into a violet haze under a night sky.
+const REMIX_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 o;
+uniform sampler2D uPal;
+uniform vec2 uCam;
+uniform vec4 uRot;
+uniform float uRise, uTime;
+${COMMON}
+float terr(vec2 P, float j){ return wave(uW1, P.x * 0.5) + wave(uW2, P.y * 0.5) + 16.0 * sin(j * 6.283185307 * 3.0 / 192.0) - 240.0; }
+vec3 pal(float v){
+  float i = mod(v, 256.0) * 0.5;
+  float a = floor(i);
+  vec3 c0 = texelFetch(uPal, ivec2(int(a), 0), 0).rgb;
+  vec3 c1 = texelFetch(uPal, ivec2(min(int(a) + 1, 127), 0), 0).rgb;
+  return mix(c0, c1, i - a);
+}
+float hash(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+vec3 sky(vec2 sp, float r){
+  float h = clamp((r - 110.0) / 110.0, 0.0, 1.0);
+  vec3 c = mix(vec3(0.07, 0.03, 0.13), vec3(0.003, 0.004, 0.015), pow(h, 0.6));
+  vec2 g = floor(sp * 1.5);
+  float st = step(0.985, hash(g)) * pow(hash(g + 3.1), 4.0);
+  c += vec3(0.8, 0.85, 1.0) * st * 1.5 * h;
+  return c;
+}
+void main(){
+  vec2 p = vec2(vUv.x, 1.0 - vUv.y) * vec2(320.0, 200.0);
+  float r = 209.5 + uRise - p.y;
+  float s = -332800.0 / 65536.0 + r * (2560.0 / 65536.0);
+  float x = p.x / 320.0 * 160.0 - 0.5 - 80.0;
+  vec2 d = vec2(x * uRot.x + 160.0 * uRot.y, 160.0 * uRot.z - x * uRot.w) / 256.0;
+  vec3 col = sky(p, r);
+  // march j continuously (single steps to 64, then double)
+  float lj = 0.0, lf = -1.0;
+  bool hit = false; float j = 1.0;
+  for (int i = 0; i < 200; i++) {
+    float pp = j < 64.0 ? j + 1.0 : j + 2.0;
+    float T = terr(uCam + pp * d, j);
+    float f = (T + mOf(j)) - s * j;      // > 0: terrain above the ray
+    if (f > 0.0) {
+      // refine
+      float a = lj, b = j;
+      for (int k = 0; k < 6; k++) {
+        float m = 0.5 * (a + b);
+        float pm = m < 64.0 ? m + 1.0 : m + 2.0;
+        if ((terr(uCam + pm * d, m) + mOf(m)) - s * m > 0.0) b = m; else a = m;
+      }
+      j = b; hit = true; break;
+    }
+    lj = j;
+    j += j < 64.0 ? 1.0 : 2.0;
+    if (j > 190.0) break;
+  }
+  if (hit && r <= 139.5 + uRise * 0.0 + 1000.0) {
+    float pp = j < 64.0 ? j + 1.0 : j + 2.0;
+    vec2 P = uCam + pp * d;
+    float T = terr(P, j);
+    // normal: height units are ~20x the ground units in this projection
+    float e = 3.0;
+    float tx = terr(P + vec2(e, 0.0), j) - terr(P - vec2(e, 0.0), j);
+    float ty = terr(P + vec2(0.0, e), j) - terr(P - vec2(0.0, e), j);
+    // ground (P) with height T/22 as z: the projection's own aspect
+    // (relief exaggerated 4x so the light can model the hills)
+    vec3 n = normalize(vec3(-tx / (2.0 * e) / 4.5, -ty / (2.0 * e) / 4.5, 1.0));
+    vec3 v = -normalize(vec3(d, (s - 1.0) / 22.0));
+    vec3 base = pow(pal(T + 140.0 - j / 8.0), vec3(2.2));
+    vec3 L = normalize(vec3(0.6, 0.25, 0.35));
+    float ndl = max(dot(n, L), 0.0);
+    vec3 h = normalize(L + v);
+    float spec = pow(max(dot(n, h), 0.0), 18.0);
+    float F = 0.04 + 0.96 * pow(1.0 - max(dot(n, v), 0.0), 5.0);
+    vec3 c = base * (0.25 + 1.3 * ndl) + vec3(0.5, 0.6, 1.1) * spec * 0.25 + vec3(0.08, 0.1, 0.3) * F * 0.5;
+    // haze with distance
+    float fog = smoothstep(60.0, 190.0, j);
+    c = mix(c, vec3(0.03, 0.015, 0.08), fog * 0.6);
+    col = c;
+  }
+  if (r > 139.5 && !hit) col = sky(p, r);
+  o = vec4(col, 1.0);
+}`;
+
 export default {
   name: '3DSinfld',
   credit: 'Psi',
@@ -130,6 +216,7 @@ export default {
     this.terrain = R.fsProgram(TERRAIN_FS);
     this.envelope = R.fsProgram(ENVELOPE_FS);
     this.draw = R.fsProgram(DRAW_FS);
+    this.remix = R.fsProgram(REMIX_FS);
     // camera path, one entry per loop iteration (exact integer math)
     const N = 4500;
     this.rot = new Float64Array(N + 2); this.xw = new Float64Array(N + 2); this.yw = new Float64Array(N + 2);
@@ -165,6 +252,24 @@ export default {
       this.tA = R.target(cols, STEPS, o);
       this.tB = R.target(cols, STEPS, { ...o, filter: this.linear ? gl.LINEAR : gl.NEAREST });
     }
+  },
+
+  renderRemix(R, t, post) {
+    const F = (x) => x * FPS;
+    post.begin({ samples: 1 });
+    if (t >= this.tLoop) {
+      const n = Math.max(1, Math.min(4500, F(t - this.tLoop) + 1));
+      const i = Math.floor(n), f = n - i;
+      const L = (arr) => arr[i] + (arr[i + 1] - arr[i]) * f;
+      const r = L(this.rot) / 8;
+      const ang = (k) => 255 * Math.sin(k * Math.PI * 2 / 1024);
+      const rise = Math.max(Math.max(0, 160 - F(t - this.tW)), t > this.tSink ? Math.min(160, F(t - this.tSink)) : 0);
+      this.remix.use().tex('uW1', this.w1).tex('uW2', this.w2).tex('uPal', this.palTex).f('uCam', L(this.xw), L(this.yw))
+        .f('uRot', ang(r + 256), ang(r), ang(r + 177 + 256), ang(r + 177)).f('uRise', rise).f('uTime', t);
+      R.drawFullscreen();
+    }
+    post.end(t, { exposure: 1.0, bloom: 0.08, grain: 0.02, vignette: 0.3 });
+    return true;
   },
 
   render(R, t) {
