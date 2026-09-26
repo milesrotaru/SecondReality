@@ -249,3 +249,41 @@ def lens(pk):
 
 
 ALL += [lens]
+
+
+def plz(pk):
+    """PLZPART (Wildfire): plasma-cube spline path (RATA.INC, 8 words per key:
+    tx, ty, dis, kx, ky, kz, light kx, light ky; with kkk=100 and a REPT) and
+    the spline basis table (SPLINE.INC, 4 x 256 words scaled by 32768)."""
+    import re
+    txt = open(fc.path('PLZPART', 'RATA.INC'), 'rb').read().decode('latin1')
+    env = {}
+    vals = []
+    lines = [ln.split(';')[0].strip() for ln in txt.splitlines()]
+    i = 0
+    while i < len(lines):
+        ln = lines[i]
+        m = re.match(r'(\w+)\s*=\s*(.+)', ln)
+        if m and not ln.lower().startswith('dw'):
+            env[m.group(1)] = eval(m.group(2), {}, env)
+        elif ln.upper().startswith('REPT'):
+            n = int(ln.split()[1])
+            body = []
+            i += 1
+            while not lines[i].upper().startswith('ENDM'):
+                body.append(lines[i])
+                i += 1
+            for _ in range(n):
+                for b in body:
+                    vals += [int(eval(v, {}, env)) for v in b[2:].split(',')]
+        elif ln.lower().startswith('dw'):
+            vals += [int(eval(v, {}, env)) for v in ln[2:].split(',')]
+        i += 1
+    assert len(vals) % 8 == 0
+    pk.add('plz.rata', struct.pack('<%dh' % len(vals), *vals), type='i16')
+    sp = fc.parse_inc('PLZPART/SPLINE.INC')
+    assert len(sp) == 1024
+    pk.add('plz.spline', struct.pack('<1024h', *sp), type='i16')
+
+
+ALL += [plz]

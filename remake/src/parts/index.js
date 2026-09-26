@@ -9,6 +9,7 @@ import techno from './techno.js';
 import panic from './panic.js';
 import mntscrl from './mntscrl.js';
 import lens from './lens.js';
+import plz from './plz.js';
 
 export const PARTS = [
   { music: [0, 0] },
@@ -24,4 +25,5 @@ export const PARTS = [
   { waitPlus: true },
   mntscrl,
   lens,
+  plz,
 ];
