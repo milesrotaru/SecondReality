@@ -9,6 +9,8 @@
 //  5. the troll slides in with a bang (TROLL.UP), shakes, waits for the panic.
 import { FPS } from '../demo.js';
 import { Picture } from '../gfx/picture.js';
+import * as TX from './techno_remix.js';
+import { TrollScene } from './troll_remix.js';
 
 const trunc = Math.trunc;
 
@@ -112,6 +114,7 @@ export default {
     this.barProg = R.program(BAR_VS, BAR_FS);
     this.countProg = R.fsProgram(COUNT_FS);
     this.troll = new Picture(R, A.pic('techno.troll'));
+    this.A = A;
     this.trollPal = A.pic('techno.troll').pal;
     this.vao = gl.createVertexArray();
     this.vbo = gl.createBuffer();
@@ -240,6 +243,113 @@ export default {
     return { end: tt + F(1) };
   },
 
+  // ---------------- remix (techno_remix.js) ----------------
+  renderRemix(R, t, post) {
+    const gl = R.gl;
+    if (!this.rx) {
+      this.rx = { rings: R.fsProgram(TX.RINGS_FS), panels: R.fsProgram(TX.PANELS_FS), bars: R.program(TX.BARS_VS, TX.BARS_FS), vbo: gl.createBuffer(), vao: gl.createVertexArray() };
+      gl.bindVertexArray(this.rx.vao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.rx.vbo);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+      gl.bindVertexArray(null);
+    }
+    if (t >= this.tTrollLoad) return this.renderRemixTroll ? this.renderRemixTroll(R, t, post) : false;
+    const X = this.rx;
+    post.begin({ samples: 4 });
+    let fade = [0, 0, 0, 0];
+    if (t >= this.tI2 && t < this.tBlockSetup) {
+      const q = this.ringParams(t);
+      // the plate sways slowly; a gentle push-in over the part
+      const k = (t - this.tI2) / (this.tBlockSetup - this.tI2);
+      const a = 0.25 * Math.sin(t * 0.21), dist = 360 - 60 * k;
+      const cam = [Math.sin(a) * dist * 0.6, 290 * Math.cos(a) * (1 - 0.2 * k), dist * 0.62];
+      X.rings.use().tex('uR1', this.ringTex[0]).tex('uR2', this.ringTex[1])
+        .f('uC1', ...q.c1).f('uC2', ...q.c2).fv('uPal', q.pal, 3).f('uUse2', q.second ? 1 : 0).fv('uWobble', q.wob, 1)
+        .f('uCam', ...cam).f('uTgt', 0, -12, 0).f('uTime', t);
+      R.drawFullscreen();
+      fade = [1, 1, 1, q.white * 0.85];
+    } else if (t >= this.tBlockSetup && t < this.tBars) {
+      let white = 1, cleared = 0, zy = 0;
+      for (let b = 0; b < 4; b++) {
+        const B = this.blocks[b];
+        if (t < B.wipe) break;
+        const k = (t - B.wipe) * FPS;
+        const i = Math.min(21, k + 1);
+        cleared = b; zy = i * (i + 1) / 2;
+        white = Math.max(0, 256 - 32 * (i - 1)) / 256;
+        if (t >= B.flash) { white = stepLerp([32, 64, 192, 256], (t - B.flash) * FPS) / 256; zy = 400; }
+      }
+      const drop = new Float32Array(4);
+      for (let b = 0; b < 4; b++) {
+        if (b < cleared) drop[b] = 400;
+        else if (b === cleared && t >= this.blocks[0].wipe) drop[b] = zy;
+      }
+      const c = [45 / 63, 52 / 63, 60 / 63].map((v) => Math.pow(v, 2.2) * 1.6);
+      X.panels.use().fv('uDrop', drop, 1).f('uCol', ...c).f('uTime', t);
+      R.drawFullscreen();
+      fade = [1, 1, 1, white];
+    } else if (t >= this.tBars) {
+      const D = this.barDisp;
+      let lo = 0, hi = D.length - 1;
+      while (lo < hi) { const m = (lo + hi + 1) >> 1; if (D[m].t <= t) lo = m; else hi = m - 1; }
+      if (t < D[0].t) fade = [1, 1, 1, 1];
+      else {
+        const cur = D[lo];
+        const layers = cur.layers.slice().sort((a, b) => b - a);
+        const verts = [];
+        layers.forEach((sid, li) => {
+          const q = this.barQuads(this.barStates[sid]);
+          for (let i = 0; i < q.length; i += 2) verts.push(q[i], q[i + 1], li);
+        });
+        const pos7 = this.lastRow7(t);
+        const curpal = pos7 !== null ? Math.max(0, 15 - (t - pos7) * FPS) : 0;
+        const beat = curpal / 15;
+        const base = [38, 33, 44].map((v) => Math.pow(v * 64 / 111 / 63, 2.2));
+        const I = 1.1 + 2.2 * beat;
+        gl.bindVertexArray(X.vao);
+        gl.bindBuffer(gl.ARRAY_BUFFER, X.vbo);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.STREAM_DRAW);
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.ONE, gl.ONE);
+        X.bars.use().f('uSway', 0.35 * Math.sin(t * 0.37), 0.2 * Math.sin(t * 0.23 + 1.0)).f('uXoff', cur.which === 3 ? 320 - cur.xpos : 0)
+          .f('uCol', base[0] * I * (1 + beat * 0.4), base[1] * I, base[2] * I * (1 + beat * 0.2));
+        gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
+        gl.disable(gl.BLEND);
+        gl.bindVertexArray(null);
+      }
+    }
+    post.end(t, { exposure: 1.0, bloom: 0.1, grain: 0.02, vignette: 0.3, fade });
+    return true;
+  },
+
+  trollShift(t) {
+    const F = (t2) => (t2) * FPS;
+    let xpos = 0, flashAdd = 0;
+    if (t >= this.tSlide) {
+      if (t < this.tRipple) {
+        const k = F(t - this.tSlide);
+        const i = Math.min(this.slideX.length - 1, Math.floor(k));
+        const a = i > 0 ? this.slideX[i - 1] : 0;
+        xpos = a + (this.slideX[i] - a) * (k - i);
+      } else if (t < this.tStatic) {
+        const k = F(t - this.tRipple);
+        xpos = stepLerp(this.rippleX.slice(0, 50), k);
+        if (k < 16) flashAdd = 45 - k * 3;
+      } else xpos = 320;
+    }
+    return { xpos, flashAdd };
+  },
+
+  renderRemixTroll(R, t, post) {
+    if (!this.trollScene) this.trollScene = TrollScene.get(R, this.A);
+    const { xpos, flashAdd } = this.trollShift(t);
+    post.begin({ samples: 1 });
+    if (xpos > 0) this.trollScene.draw(R, { shift: 320 - xpos, flash: Math.pow(flashAdd / 63, 2.0) * 1.1, time: t });
+    post.end(t, { exposure: 1.0, bloom: 0.08, grain: 0.02, vignette: 0.3 });
+    return true;
+  },
+
   render(R, t) {
     const gl = R.gl;
     gl.clearColor(0, 0, 0, 1);
@@ -263,8 +373,7 @@ export default {
     return { scrnx, scrny, overx, overy };
   },
 
-  renderRings(R, t) {
-    const gl = R.gl;
+  ringParams(t) {
     const second = t >= this.tI;
     const tb = second ? this.tI : this.tI2;
     const jf = (t - tb) * FPS;
@@ -294,9 +403,10 @@ export default {
       }
     }
     // white flash after the interference (flash 32/64/192/256)
+    let white = 0;
     if (t >= this.tFlash1) {
-      const w = stepLerp([32, 64, 192, 256], (t - this.tFlash1) * FPS) / 256;
-      for (let i = 0; i < 48; i++) pal[i] = pal[i] * (1 - w) + w;
+      white = stepLerp([32, 64, 192, 256], (t - this.tFlash1) * FPS) / 256;
+      for (let i = 0; i < 48; i++) pal[i] = pal[i] * (1 - white) + white;
     }
     // plane-3 wobble rows
     const wob = new Float32Array(200);
@@ -308,10 +418,15 @@ export default {
         wob[row] = trunc((this.sn(bp) >> 3) * sinuspower / 15);
       }
     }
+    return { second, c1: [320 - scrnx, 200 - scrny], c2: [320 - overx + 7, 200 - overy], pal, wob, white };
+  },
+
+  renderRings(R, t) {
+    const q = this.ringParams(t);
     const vp = { x: R.vx, y: R.vy, w: R.vw, h: R.vh };
     this.ringProg.use().tex('uR1', this.ringTex[0]).tex('uR2', this.ringTex[1])
-      .f('uC1', 320 - scrnx, 200 - scrny).f('uC2', 320 - overx + 7, 200 - overy)
-      .fv('uPal', pal, 3).f('uVp', vp.x, vp.y, vp.w, vp.h).f('uUse2', second ? 1 : 0).fv('uWobble', wob, 1);
+      .f('uC1', ...q.c1).f('uC2', ...q.c2)
+      .fv('uPal', q.pal, 3).f('uVp', vp.x, vp.y, vp.w, vp.h).f('uUse2', q.second ? 1 : 0).fv('uWobble', q.wob, 1);
     R.drawFullscreen();
   },
 
