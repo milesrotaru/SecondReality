@@ -44,7 +44,7 @@ class App {
     this.R = new GL(this.canvas);
     // ?mode=p3: render as a 640x400 true-colour software renderer would
     if (MODE === 'p3') this.R.setMachine(640, 400); // exact 2x of the 320x200 art, 4:3 display
-    if (MODE === 'remix') this.post = new Post(this.R);
+    if (MODE === 'remix') { this.post = new Post(this.R); this.dtN = 0; }
     this.status = document.getElementById('status');
     this.resize();
     window.addEventListener('resize', () => this.resize());
@@ -108,6 +108,17 @@ class App {
       const err = audio - this.vt;
       if (Math.abs(err) > 0.08) this.vt = audio;      // seek, stall or tab switch
       else this.vt += err * 0.03;                      // ~0.5 s to absorb drift
+    }
+    // remix: adapt the HDR buffer's pixel budget to the GPU (the raytraced
+    // parts cost per pixel); the budget follows smoothed frame times
+    if (this.post && this.lastTs != null && ts !== undefined) {
+      const dt = Math.min(0.1, (ts - this.lastTs) / 1000);
+      this.dtAvg = this.dtAvg == null ? dt : this.dtAvg * 0.95 + dt * 0.05;
+      if (++this.dtN % 30 === 0) {
+        const P = this.post;
+        if (this.dtAvg > 1 / 45) P.budget = Math.max(0.5e6, P.budget * 0.8);
+        else if (this.dtAvg < 1 / 58 && P.budget < 2.6e6) P.budget = Math.min(2.6e6, P.budget * 1.1);
+      }
     }
     this.lastTs = ts;
     this.renderAt(this.vt);

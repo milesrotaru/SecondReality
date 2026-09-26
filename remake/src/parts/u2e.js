@@ -168,7 +168,7 @@ export default {
     sc.draw(f, {
       prog: sc.remixProg, groundFirst: true, onTop: (name, fr) => name.startsWith('s01') && fr > 900 && fr < 1100,
       setup: (p) => {
-        p.f('uKey', ...keyCam).f('uKeyC', 4.2, 3.2, 2.3)
+        p.f('uKey', ...keyCam).f('uKeyC', 2.9, 2.3, 1.75)
           .f('uSkyC', 0.2, 0.24, 0.36).f('uGndC', 0.22, 0.17, 0.12)
           .f('uFogC', 0.55, 0.38, 0.3).f('uFogD', 1 / 90000)
           .f('uPt', 0, 0, 0).f('uPtC', 0, 0, 0).f('uRough', 0.55).f('uMetal', 0.05).f('uLights', 0).f('uThrust', 0, 0, 0)

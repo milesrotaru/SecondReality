@@ -20,13 +20,18 @@ Three renderers, chosen on the start screen (or `?mode=p3` / `?mode=hd` /
   anti-aliasing. The frame is scaled to the screen with crisp pixels.
 - **Native HD**: every effect evaluated at the display's full resolution, with
   bicubic resampling and multisampled edges.
-- **Remix** (in progress): the choreography is fixed - music, cuts, syncs,
-  simulations, paths - and each part is redrawn with new effects in linear
-  HDR (bloom, ACES tonemapping, grain). Parts not remixed yet play in HD.
-  So far: *Glenz* (both polyhedra raytraced exactly as convex glass with
-  dispersion, a reflective board with coloured shadows, the board's hidden
-  wipe shown as dissolving tiles) and *Vector balls* (impostor spheres with
-  floor reflections and soft height-dependent shadows).
+- **Remix**: the choreography is fixed - music, cuts, syncs, simulations,
+  paths, fades - and every part is rebuilt as a 3D scene with modern shaders
+  in linear HDR (bloom, ACES tonemapping, grain). The pictures become scenes:
+  where the art's palette separates its layers (title, troll, lens face,
+  end rings) they are cut from it and rebuilt as sculpted reliefs or solids;
+  where a precomputed table hides a 3D setup (the hill scroller's text
+  surface, the water scroller's flying strip) a homography fitted to the
+  table recovers the camera and plane. Highlights: raytraced glass glenz
+  vectors, a raymarched moonscape with a Praxis shock ring, the city flight
+  with sun shadows, the water scene raytraced live, the credits showing live
+  renders of the remixed parts. The HDR buffer's resolution adapts to the
+  GPU's frame rate.
 
 Controls: `←` / `→` previous / next part, `Space` pause, `F` fullscreen,
 `M` mute. URL options: `?part=Glenz`, `?t=300` (seconds), `?mute=1`,

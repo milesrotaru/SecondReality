@@ -75,6 +75,7 @@ export class Post {
     this.up = R.fsProgram(UP_FS);
     this.final = R.fsProgram(FINAL_FS);
     this.hf = { internal: gl.RGBA16F, format: gl.RGBA, type: gl.HALF_FLOAT, filter: gl.LINEAR };
+    this.budget = 2.6e6;   // pixel budget of the HDR buffer (adapted to the GPU by main.js)
   }
 
   ensure(w, h, samples) {
@@ -92,7 +93,7 @@ export class Post {
 
   // Redirect the "screen" to the HDR buffer. The buffer is capped at about
   // 2.6 Mpixel (the raytraced parts cost per pixel); the composite upsamples.
-  begin({ samples = 4, maxPixels = 2.6e6 } = {}) {
+  begin({ samples = 4, maxPixels = this.budget } = {}) {
     const R = this.R, gl = R.gl;
     const k = Math.min(1, Math.sqrt(maxPixels / (R.vw * R.vh)));
     const w = Math.max(1, Math.round(R.vw * k)), h = Math.max(1, Math.round(R.vh * k));
