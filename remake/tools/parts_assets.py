@@ -330,3 +330,38 @@ def coman(pk):
 
 
 ALL += [coman]
+
+
+def jplogo(pk):
+    """JPLOGO (Psi): the 'readp' RLE picture linked as _pic (header magic,
+    wid, hig, cols, add; palette at +16; rows at add*16, each a word length
+    then bytes where b&0x80 means a run of b&0x7f copies of the next byte).
+    The part uses 184 columns from x=70 of all 400 rows plus an edge column
+    of colour 65, and remaps colour 0 to 64 (black)."""
+    import omf
+    _, segs, _ = omf.parse(fc.path('JPLOGO', '_PIC.OBK'))
+    src = bytes(segs[1])
+    magic, wid, hig, cols, add = struct.unpack('<5H', src[:10])
+    pal = bytearray(src[16:16 + cols * 3]).ljust(768, b'\0')
+    pal[64 * 3:64 * 3 + 3] = b'\0\0\0'
+    p = add * 16
+    pix = bytearray()
+    for y in range(400):
+        n = struct.unpack('<H', src[p:p + 2])[0]
+        q, end, row = p + 2, p + 2 + n, bytearray()
+        while q < end:
+            b = src[q]
+            q += 1
+            if b & 0x80:
+                row += bytes([src[q]]) * (b & 0x7f)
+                q += 1
+            else:
+                row.append(b)
+        p = end
+        row = row.ljust(640, b'\0')
+        r = bytearray(row[70:70 + 184]) + b'\x41'
+        pix += bytes(64 if v == 0 else v for v in r[:184]) + b'\x41'
+    pk.pic('jp.pic', 185, 400, pix, pal)
+
+
+ALL += [jplogo]

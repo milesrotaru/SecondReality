@@ -13,6 +13,7 @@ import plz from './plz.js';
 import minvball from './minvball.js';
 import rayscrl from './rayscrl.js';
 import sinfld from './sinfld.js';
+import jplogo from './jplogo.js';
 
 export const PARTS = [
   { music: [0, 0] },
@@ -32,4 +33,5 @@ export const PARTS = [
   minvball,
   rayscrl,
   sinfld,
+  jplogo,
 ];
