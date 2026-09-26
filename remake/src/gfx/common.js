@@ -4,6 +4,15 @@
 // the original 320x200 artwork without blockiness.
 export const GLSL_BICUBIC = `
 vec4 texBicubic(sampler2D tex, vec2 uv) {
+#ifdef P3
+  // machine mode: art shown at an exact integer scale is copied pixel for
+  // pixel (as a software blitter would); anything scaled or warped is bilinear
+  vec2 tsz = vec2(textureSize(tex, 0));
+  vec2 k = 1.0 / max(fwidth(uv * tsz), vec2(1e-5));
+  if (all(lessThan(abs(k - floor(k + 0.5)), vec2(0.02))) && all(greaterThan(k, vec2(0.9))))
+    return texelFetch(tex, clamp(ivec2(floor(uv * tsz)), ivec2(0), ivec2(tsz) - 1), 0);
+  return texture(tex, uv);
+#endif
   vec2 texSize = vec2(textureSize(tex, 0));
   vec2 samplePos = uv * texSize;
   vec2 texPos1 = floor(samplePos - 0.5) + 0.5;
@@ -31,6 +40,9 @@ vec4 texBicubic(sampler2D tex, vec2 uv) {
 }
 // Same, with explicit derivatives (for coordinates that wrap discontinuously)
 vec4 texBicubicGrad(sampler2D tex, vec2 uv, vec2 gx, vec2 gy) {
+#ifdef P3
+  return textureGrad(tex, uv, gx, gy);
+#endif
   vec2 texSize = vec2(textureSize(tex, 0));
   vec2 samplePos = uv * texSize;
   vec2 texPos1 = floor(samplePos - 0.5) + 0.5;

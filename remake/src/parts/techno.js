@@ -394,7 +394,7 @@ export default {
     gl.bindVertexArray(null);
     // resolve and map counts through the beat-flashed palette
     if (!this.cntT || this.cntT.w !== R.vw || this.cntT.h !== R.vh) this.cntT = R.target(R.vw, R.vh, {});
-    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, T.msfb);
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, T.msfb || T.fb);
     gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this.cntT.fb);
     gl.blitFramebuffer(0, 0, T.w, T.h, 0, 0, T.w, T.h, gl.COLOR_BUFFER_BIT, gl.NEAREST);
     R.bindTarget(null);

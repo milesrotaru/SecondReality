@@ -6,6 +6,14 @@ import { Demo } from './demo.js';
 import { PARTS } from './parts/index.js';
 
 const qs = new URLSearchParams(location.search);
+// renderer: 'p3' (640x400 true-colour software renderer, the default) or 'hd'
+const MODE = (() => {
+  const h = location.hash.slice(1);
+  let saved = null;
+  try { saved = localStorage.getItem('sr-mode'); } catch (e) { /* storage unavailable */ }
+  const m = qs.get('mode') || (h === 'hd' || h === 'p3' ? h : null) || saved || 'p3';
+  return m === 'hd' ? 'hd' : 'p3';
+})();
 
 // Display names for the parts (after the comments in MAIN/U2.ASM)
 const TITLES = {
@@ -32,6 +40,8 @@ class App {
   constructor() {
     this.canvas = document.getElementById('c');
     this.R = new GL(this.canvas);
+    // ?mode=p3: render as a 640x400 true-colour software renderer would
+    if (MODE === 'p3') this.R.setMachine(640, 400); // exact 2x of the 320x200 art, 4:3 display
     this.status = document.getElementById('status');
     this.resize();
     window.addEventListener('resize', () => this.resize());
@@ -46,8 +56,12 @@ class App {
     let vw = W, vh = Math.round(W * 3 / 4);
     if (vh > H) { vh = H; vw = Math.round(H * 4 / 3); }
     const vx = Math.floor((W - vw) / 2), vy = Math.floor((H - vh) / 2);
-    Object.assign(this.R, { vw, vh, vx, vy, W, H });
-    this.R.viewport = { x: vx, y: vy, w: vw, h: vh };
+    this.out = { x: vx, y: vy, w: vw, h: vh };
+    if (this.R.machine) Object.assign(this.R, { W, H });
+    else {
+      Object.assign(this.R, { vw, vh, vx, vy, W, H });
+      this.R.viewport = { x: vx, y: vy, w: vw, h: vh };
+    }
     for (const p of PARTS) if (p.resize) p.resize(this.R);
   }
 
@@ -91,11 +105,38 @@ class App {
     gl.clearColor(0, 0, 0, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
     R.bindTarget(null);
+    if (R.machine) gl.clear(gl.COLOR_BUFFER_BIT);
     const part = this.demo.partAt(t);
     const last = this.demo.timeline[this.demo.timeline.length - 1];
     if (part && (t < this.demo.end || part === last)) part.render(R, t); // the end screen stays up
+    if (R.machine) this.scaleOut();
     this.t = t;
     this.partName = part && part.name;
+  }
+
+  // machine frame -> screen: crisp pixels, antialiased only at the seams
+  scaleOut() {
+    const R = this.R, gl = R.gl, o = this.out;
+    if (!this.outProg) this.outProg = R.fsProgram(`#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 c;
+uniform sampler2D uT;
+void main(){
+  vec2 ts = vec2(textureSize(uT, 0)), p = vUv * ts, i = floor(p), f = p - i - 0.5;
+  f = clamp(f / max(fwidth(p), vec2(1e-4)) * 0.5, -0.5, 0.5);
+  c = vec4(texture(uT, (i + 0.5 + f) / ts).rgb, 1.0);
+}`);
+    gl.bindTexture(gl.TEXTURE_2D, R.machine.color.tex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, R.W, R.H);
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.viewport(o.x, o.y, o.w, o.h);
+    this.outProg.use().tex('uT', R.machine.color);
+    R.drawFullscreen();
   }
 
   seekPart(dir) {
@@ -128,6 +169,14 @@ async function boot() {
     overlay.hidden = true;
     await app.start(t);
   };
+  for (const r of document.querySelectorAll('input[name="mode"]')) {
+    r.checked = r.value === MODE;
+    r.addEventListener('change', () => {
+      try { localStorage.setItem('sr-mode', r.value); } catch (e) { /* storage unavailable */ }
+      location.hash = r.value;
+      location.reload();
+    });
+  }
   const btn = document.getElementById('go');
   btn.disabled = false;
   btn.textContent = t0 > 0 ? 'Start at ' + clock(t0) : 'Start the demo';

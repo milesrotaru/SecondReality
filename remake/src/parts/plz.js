@@ -66,6 +66,7 @@ precision highp float;
 in vec2 vP;
 out vec4 o;
 uniform vec2 uP[4], uT[4];
+uniform mat3 uH;
 uniform float uDD, uShade;
 uniform int uBlock;
 const float TAU = 6.283185307179586;
@@ -98,12 +99,41 @@ void main(){
   }
   float s = xr > xl ? clamp((vP.x - xl) / (xr - xl), 0.0, 1.0) : 0.0;
   vec2 T = mix(tl, tr, s);
+#ifdef P3
+  // machine mode: exact perspective (screen -> face homography) instead of
+  // the 486's affine scanline walk
+  vec3 h = uH * vec3(vP, 1.0);
+  T = h.xy / h.z;
+#endif
   // kuva[y][x] = sini[(y*4 + sini[x*2]) & 511]/4 + 32, read through the
   // dist1 row offset sini[(y+dd)*8]/3
   float tx = T.x + S((T.y + uDD) * 8.0) / 3.0;
   float k = S(T.y * 4.0 + S(tx * 2.0)) / 4.0 + 32.0;
   o = vec4(blockPal(k) * uShade, 1.0);
 }`;
+
+// 3x3 homography mapping the 4 points src[i] -> dst[i] (column-major for GL)
+function homography(src, dst) {
+  const A = [], b = [];
+  for (let i = 0; i < 4; i++) {
+    const [x, y] = src[i], [u, v] = dst[i];
+    A.push([x, y, 1, 0, 0, 0, -u * x, -u * y]); b.push(u);
+    A.push([0, 0, 0, x, y, 1, -v * x, -v * y]); b.push(v);
+  }
+  // Gaussian elimination with partial pivoting
+  for (let c = 0; c < 8; c++) {
+    let p = c;
+    for (let r = c + 1; r < 8; r++) if (Math.abs(A[r][c]) > Math.abs(A[p][c])) p = r;
+    [A[c], A[p]] = [A[p], A[c]]; [b[c], b[p]] = [b[p], b[c]];
+    for (let r = 0; r < 8; r++) if (r !== c && A[c][c] !== 0) {
+      const k = A[r][c] / A[c][c];
+      for (let j = c; j < 8; j++) A[r][j] -= k * A[c][j];
+      b[r] -= k * b[c];
+    }
+  }
+  const h = b.map((v, i) => v / A[i][i]);
+  return new Float32Array([h[0], h[3], h[6], h[1], h[4], h[7], h[2], h[5], 1]);
+}
 
 function buildPals() {
   const ptau = [0];
@@ -260,6 +290,7 @@ export default {
       if (-p[0] * nx - p[1] * ny - p[2] * nz > 0) continue;
       if (p[2] <= 1 || q[2] <= 1 || r[2] <= 1 || P3[d][2] <= 1) continue;
       const s = Math.max(0, Math.min(64, (ls[0] * nx + ls[1] * ny + ls[2] * nz) / 250000 + 32));
+      pr.m3('uH', homography([P2[a], P2[b], P2[c], P2[d]], [[64, 4], [190, 4], [190, 60], [64, 60]]));
       pr.fv('uP', [...P2[a], ...P2[b], ...P2[c], ...P2[d]], 2).f('uShade', s / 64).i('uBlock', col);
       gl.drawArrays(gl.TRIANGLE_FAN, 0, 4);
     }

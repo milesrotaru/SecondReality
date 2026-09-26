@@ -50,6 +50,11 @@ export class GL {
   }
 
   program(vs, fs) {
+    if (this.machine) {
+      // "P3" machine mode: shaders get #define P3 (see common.js filters)
+      const inj = (src) => src.replace(/^(#version[^\n]*\n)/, '$1#define P3 1\n');
+      vs = inj(vs); fs = inj(fs);
+    }
     const key = vs + '\u0000' + fs;
     if (this.programs.has(key)) return this.programs.get(key);
     const gl = this.gl;
@@ -153,7 +158,7 @@ export class GL {
     const gl = this.gl;
     this.cur = t || null;
     if (!t) {
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.machine ? this.machine.fb : null);
       const v = this.viewport;
       gl.viewport(v.x, v.y, v.w, v.h);
       return;
@@ -163,7 +168,17 @@ export class GL {
   }
 
   // Shared multisampled scene target (viewport sized, with depth).
+  // Machine mode: every part renders into a fixed w x h true-colour frame
+  // (no multisampling, bilinear filtering), which is then scaled to the
+  // screen - the output of a software renderer on a faster PC.
+  setMachine(w, h) {
+    this.machine = this.target(w, h, { filter: this.gl.NEAREST });
+    Object.assign(this, { vw: w, vh: h, vx: 0, vy: 0 });
+    this.viewport = { x: 0, y: 0, w, h };
+  }
+
   sceneTarget(samples = 4) {
+    if (this.machine) samples = 1;
     const w = this.vw, h = this.vh;
     const k = w + 'x' + h + 'x' + samples;
     if (!this._scene || this._scene.key !== k) {
@@ -182,7 +197,7 @@ export class GL {
       gl.blitFramebuffer(0, 0, t.w, t.h, 0, 0, t.w, t.h, gl.COLOR_BUFFER_BIT, gl.NEAREST);
     }
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, t.fb);
-    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this.machine ? this.machine.fb : null);
     const v = this.viewport;
     gl.blitFramebuffer(0, 0, t.w, t.h, v.x, v.y, v.x + v.w, v.y + v.h, gl.COLOR_BUFFER_BIT, t.w === v.w && t.h === v.h ? gl.NEAREST : gl.LINEAR);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);

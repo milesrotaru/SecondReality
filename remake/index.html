@@ -53,6 +53,11 @@
   ol { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 2px 18px; font-size: 12px; }
   ol li span { color: var(--dim); }
   kbd { font: inherit; color: var(--white); }
+  .modes { display: grid; gap: 6px; }
+  .modes label { display: flex; gap: 10px; align-items: baseline; cursor: pointer; }
+  .modes b { color: var(--white); font-weight: 500; margin-right: 6px; }
+  .modes input { accent-color: var(--cyan); }
+  .modes input:focus-visible { outline: 2px solid var(--white); outline-offset: 2px; }
   ol a { color: var(--text); text-decoration: none; }
   ol a:hover, ol a:focus-visible { color: var(--cyan); text-decoration: underline; outline: none; }
   #status { position: fixed; left: 16px; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); color: var(--dim); font-size: 12px; pointer-events: none; }
@@ -68,10 +73,17 @@
       <span class="by">Copyright (C) 1993 <b>Future Crew</b></span>
     </section>
     <section>
-      <p class="lede">The Assembly '93 winning PC demo, rebuilt for today's screens from the released source and data: every part redrawn at native resolution, the original soundtrack played by a port of its own replayer, and the timing kept to the retrace.</p>
+      <p class="lede">The Assembly '93 winning PC demo, rebuilt for today's screens from the released source and data: every part recomputed from its own code in true colour at a higher resolution, the original soundtrack played by a port of its own replayer, and the timing kept to the retrace.</p>
       <div class="row">
         <button id="go" type="button" disabled>Loading data</button>
         <span class="note">About 16 minutes, with sound.</span>
+      </div>
+    </section>
+    <section>
+      <div class="label">Renderer</div>
+      <div class="modes">
+        <label><input type="radio" name="mode" id="mode-p3" value="p3"> <span><b>Pentium III</b> 640&times;400, true colour, as a 733&nbsp;MHz software renderer would draw it</span></label>
+        <label><input type="radio" name="mode" id="mode-hd" value="hd"> <span><b>Native HD</b> every effect evaluated at your screen's full resolution</span></label>
       </div>
     </section>
     <section class="cols">
