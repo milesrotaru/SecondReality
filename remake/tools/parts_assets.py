@@ -287,3 +287,36 @@ def plz(pk):
 
 
 ALL += [plz]
+
+
+def rayscrl(pk):
+    """RAYSCRL (Trug): raytraced background (BKG.CLX), the fire+sword strip
+    (MIEKKA.SCI, 400x34, its palette is used for the whole screen) and the
+    texel->pixel scatter tables WAT1..3.DAT inverted into a per-pixel map of
+    the 158x34 scroll buffer coordinate. The newest column is written at
+    buffer column 0 of the next row, so (r, 0) is remapped to (r-1, 158)."""
+    import array
+    bg = fc.read('WATER', 'BKG.CLX')
+    mk = fc.read('WATER', 'MIEKKA.SCI')
+    pal = mk[10:778]
+    pk.pic('ray.bg', 320, 200, bg[778:778 + 64000], pal)
+    pk.add('ray.font', mk[778:778 + 400 * 34], w=400, h=34)
+    out = array.array('f', [0.0] * (64000 * 4))
+    for fn in ('WAT1.DAT', 'WAT2.DAT', 'WAT3.DAT'):
+        d = fc.read('WATER', fn)
+        p = 0
+        for i in range(158 * 34):
+            c = struct.unpack('<H', d[p:p + 2])[0]
+            p += 2
+            r, u = divmod(i, 158)
+            if u == 0:
+                r, u = r - 1, 158
+            for _ in range(c):
+                o = struct.unpack('<H', d[p:p + 2])[0]
+                p += 2
+                if o < 64000 and r >= 0:
+                    out[o * 4:o * 4 + 4] = array.array('f', [u, r, 1.0, 0.0])
+    pk.add('ray.uv', out.tobytes())
+
+
+ALL += [rayscrl]
