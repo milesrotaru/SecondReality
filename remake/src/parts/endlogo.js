@@ -3,6 +3,7 @@
 // musplus > -16, fades to black over 64 frames.
 import { FPS } from '../demo.js';
 import { Picture } from '../gfx/picture.js';
+import { Rings } from './endlogo_remix.js';
 
 export default {
   name: 'EndLogo',
@@ -18,6 +19,21 @@ export default {
     this.tHold = this.tIn + F(129);
     this.tOut = P.until(this.tHold, (p) => p.musplus > -16);
     return this.tOut + F(64);
+  },
+
+  renderRemix(R, t, post) {
+    const F = (x) => x * FPS;
+    if (!this.rings) this.rings = new Rings(R);
+    post.begin({ samples: 1 });
+    let fade = [1, 1, 1, 1];
+    if (t >= this.tIn) {
+      this.rings.draw(R, t);
+      const c = Math.min(128, F(t - this.tIn));
+      fade = [1, 1, 1, (128 - c) / 128];
+      if (t >= this.tOut) fade = [0, 0, 0, 1 - Math.max(0, 63 - F(t - this.tOut)) / 64];
+    }
+    post.end(t, { exposure: 1.0, bloom: 0.08, grain: 0.02, vignette: 0.3, fade });
+    return true;
   },
 
   render(R, t) {
