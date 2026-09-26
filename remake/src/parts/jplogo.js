@@ -9,6 +9,7 @@
 import { FPS } from '../demo.js';
 import { GLSL_BICUBIC } from '../gfx/common.js';
 import { palToRGBA } from '../gfx/gl.js';
+import { IceCard } from './ice_remix.js';
 
 const FS = `#version 300 es
 precision highp float;
@@ -98,6 +99,33 @@ export default {
     this.tWait = this.tSlide + F(this.slide.length);
     this.tLoop = P.until(this.tWait, (p) => p.musplus >= 4);
     return this.tWait + F(700);                 // doit(): frame < 700, frame counts from tWait
+  },
+
+  // remix: the card is the ice kingdom scene (ice_remix.js), same jelly
+  jellyParams(t) {
+    const F = (x) => x * FPS;
+    if (t < this.tLoop) {
+      const k = Math.max(0, F(t - this.tSlide));
+      const i = Math.min(this.slide.length - 1, Math.floor(k)), f = k - i;
+      const s = i + 1 < this.slide.length ? this.slide[i] + (this.slide[i + 1] - this.slide[i]) * f : 0;
+      return { scroll: s, y: [0, 400], xsc: 0 };
+    }
+    const fr = Math.min(511, F(t - this.tWait));
+    const i = Math.floor(fr), f = fr - i;
+    const L = (a) => a[i] + (a[Math.min(799, i + 1)] - a[i]) * f;
+    const y1 = L(this.y1t), y2 = L(this.y2t);
+    return { scroll: -1, y: [y1, y2], xsc: (400 - (y2 - y1)) / 8 };
+  },
+
+  renderRemix(R, t, post) {
+    const ice = IceCard.get(R);
+    const tex = ice.render(R, t);
+    post.begin({ samples: 1 });
+    const q = this.jellyParams(t);
+    ice.jelly.use().tex('uPic', tex.color).f('uScroll', q.scroll).f('uY', ...q.y).f('uXsc', q.xsc).f('uWhite', 0, 1, 0);
+    R.drawFullscreen();
+    post.end(t, { exposure: 1.0, bloom: 0.09, grain: 0.02, vignette: 0.3 });
+    return true;
   },
 
   render(R, t) {
