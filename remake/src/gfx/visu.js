@@ -126,9 +126,28 @@ uniform vec3 uSkyC, uGndC;          // hemisphere ambient / reflections
 uniform vec3 uFogC; uniform float uFogD;
 uniform vec3 uPt, uPtC;             // point light (camera space)
 uniform float uRough, uMetal;
+uniform mat3 uCamInv;               // camera -> world rotation
+uniform vec3 uCamW;                 // camera position (world)
+uniform mat4 uL;                    // world -> light clip
+uniform sampler2D uShadow;
+uniform float uShadowOn;
+uniform vec3 uUp;                   // world up (in the uCamInv frame)
 out vec4 o;
+float shadowAt(vec3 cpos, vec3 n){
+  if (uShadowOn < 0.5) return 1.0;
+  vec3 w = uCamInv * cpos + uCamW;
+  vec4 l = uL * vec4(w, 1.0);
+  vec3 q = l.xyz * 0.5 + 0.5;
+  if (any(lessThan(q.xy, vec2(0.0))) || any(greaterThan(q.xy, vec2(1.0)))) return 1.0;
+  vec2 ts = 1.0 / vec2(textureSize(uShadow, 0));
+  float bias = 0.0015;
+  float s = 0.0;
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++)
+    s += texture(uShadow, q.xy + vec2(i, j) * ts * 1.5).r < q.z - bias ? 0.0 : 1.0;
+  return s / 9.0;
+}
 vec3 pal(float i){ return texelFetch(uPal, ivec2(int(clamp(i, 0.0, 255.0)), 0), 0).rgb; }
-vec3 env(vec3 r){ return mix(uGndC, uSkyC, smoothstep(-0.25, 0.35, -r.y)); }
+vec3 env(vec3 r){ return mix(uGndC, uSkyC, smoothstep(-0.25, 0.35, dot(uCamInv * r, uUp))); }
 void main(){
   int fl = int(vFlags + 0.5);
   bool twoSided = (fl & 0x200) != 0;
@@ -145,9 +164,10 @@ void main(){
   float a = uRough * uRough;
   vec3 F0 = mix(vec3(0.04), alb, uMetal);
   vec3 col = vec3(0.0);
+  float sh = shadowAt(vPos + n * 8.0, n);
   for (int k = 0; k < 2; k++) {
     vec3 L = k == 0 ? uKey : normalize(uPt - vPos);
-    vec3 C = k == 0 ? uKeyC : uPtC * 1e8 / (dot(uPt - vPos, uPt - vPos) + 1e6);
+    vec3 C = k == 0 ? uKeyC * sh : uPtC * 1e8 / (dot(uPt - vPos, uPt - vPos) + 1e6);
     float nl = max(dot(n, L), 0.0);
     if (nl <= 0.0) continue;
     vec3 h = normalize(L + v);
@@ -159,7 +179,7 @@ void main(){
     col += C * nl * ((1.0 - F) * alb * (1.0 - uMetal) / 3.14159 + D * G * F);
   }
   vec3 Fv = F0 + (1.0 - F0) * pow(1.0 - nv, 5.0);
-  col += alb * (1.0 - uMetal) * mix(uGndC, uSkyC, 0.5 - 0.5 * n.y) * 0.5;
+  col += alb * (1.0 - uMetal) * mix(uGndC, uSkyC, 0.5 + 0.5 * dot(uCamInv * n, uUp)) * 0.5;
   col += env(reflect(-v, n)) * Fv * (1.0 - a * 0.7);
   // hull lights: sparse warm dots on a grid in object space, engines glow
   if (uLights > 0.0) {
@@ -180,6 +200,15 @@ void main(){
   float dd = log2(max(vPos.z, 1.0) / uNearFar.x) / log2(uNearFar.y / uNearFar.x);
   gl_FragDepth = clamp(dd - uBias, 0.0, 1.0);
 }`;
+
+const SHADOW_VS = `#version 300 es
+layout(location=0) in vec3 aPos;
+uniform mat3 uO; uniform vec3 uOp; uniform mat4 uL;
+void main(){ vec3 w = uO * aPos + uOp; gl_Position = uL * vec4(w, 1.0); }`;
+const SHADOW_FS = `#version 300 es
+precision highp float;
+out vec4 o;
+void main(){ o = vec4(gl_FragCoord.z, 0.0, 0.0, 1.0); }`;
 
 export class VisuScene {
   constructor(R, A, key, opts = {}) {
@@ -301,6 +330,57 @@ export class VisuScene {
   }
 
   get frameCount() { return this.frames.length; }
+
+  // camera (object 0) at fractional frame f: rotation normalised to 1 and
+  // translation; camera = Cn * world + cp
+  cameraAt(f) {
+    const n = this.frames.length;
+    const i0 = Math.max(0, Math.min(n - 1, Math.floor(f))), i1 = Math.min(n - 1, i0 + 1);
+    const A = this.frames[i0], B = this.frames[i1];
+    let dp = 0, dm = 0;
+    for (let j = 0; j < 3; j++) dp = Math.max(dp, Math.abs(B.p[j] - A.p[j]));
+    for (let j = 0; j < 9; j++) dm = Math.max(dm, Math.abs(B.m[j] - A.m[j]));
+    const a = dp > 20000 || dm > 4000 ? 0 : f - i0;
+    const C = new Float64Array(9), cp = [0, 0, 0];
+    for (let j = 0; j < 9; j++) C[j] = (A.m[j] + (B.m[j] - A.m[j]) * a) / UNIT;
+    for (let j = 0; j < 3; j++) cp[j] = A.p[j] + (B.p[j] - A.p[j]) * a;
+    // camera position in the world: -C^T cp
+    const W = [0, 1, 2].map((k) => -(C[k] * cp[0] + C[3 + k] * cp[1] + C[6 + k] * cp[2]));
+    return { C, cp, W };
+  }
+
+  // object -> world transform (rotation normalised, translation)
+  objectWorld(f, c) {
+    const n = this.frames.length;
+    const i0 = Math.max(0, Math.min(n - 1, Math.floor(f))), i1 = Math.min(n - 1, i0 + 1);
+    const A = this.frames[i0], B = this.frames[i1];
+    const a = (B.on[c] ? f - i0 : 0);
+    const O = new Float32Array(9), op = [0, 0, 0];
+    for (let j = 0; j < 9; j++) O[j] = (A.m[c * 9 + j] + (B.m[c * 9 + j] - A.m[c * 9 + j]) * a) / UNIT;
+    for (let j = 0; j < 3; j++) op[j] = A.p[c * 3 + j] + (B.p[c * 3 + j] - A.p[c * 3 + j]) * a;
+    return { O, op };
+  }
+
+  // depth-only render of every visible object from a light: uL maps world
+  // to light clip space (orthographic)
+  drawShadow(f, L) {
+    const gl = this.R.gl;
+    if (!this.shadowProg) this.shadowProg = this.R.program(SHADOW_VS, SHADOW_FS);
+    const fi = Math.max(0, Math.min(this.frames.length - 1, Math.floor(f)));
+    const prog = this.shadowProg.use().m4('uL', L);
+    for (let c = 1; c < this.conum; c++) {
+      if (!this.frames[fi].on[c]) continue;
+      const mesh = this.meshes[this.index[c]];
+      if (!mesh) continue;
+      const { O, op } = this.objectWorld(f, c);
+      prog.m3('uO', transpose3(O)).f('uOp', ...op);
+      const Lst = mesh.lists[0];
+      if (!Lst.count) continue;
+      gl.bindVertexArray(Lst.vao);
+      gl.drawArrays(gl.TRIANGLES, 0, Lst.count);
+    }
+    gl.bindVertexArray(null);
+  }
 
   // camera-applied transform for object c at fractional frame f
   objectTransform(f, c) {
